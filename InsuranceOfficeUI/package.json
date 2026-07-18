@@ -1,0 +1,31 @@
+{
+  "name": "insurance-office-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start:thelion": "dotnet run --no-build --project ../TheLionMcpServer --launch-profile http",
+    "start:bluecompany": "dotnet run --no-build --project ../TheBlueCompanyMcpServer --launch-profile http",
+    "start:threelines": "dotnet run --no-build --project ../TheThreeLinesMcpServer --launch-profile http",
+    "start:proxy": "wait-on tcp:5081 tcp:5082 tcp:5083 && dotnet run --no-build --project ../InsuranceProxy",
+    "start:api": "wait-on tcp:5275 && dotnet run --no-build --project ../InsuranceOfficeApi --launch-profile http",
+    "start:all": "concurrently --names \"LION,BLUE,THREE,PROXY,API,UI\" --prefix-colors \"yellow,blue,cyan,magenta,green,white\" \"npm run start:thelion\" \"npm run start:bluecompany\" \"npm run start:threelines\" \"npm run start:proxy\" \"npm run start:api\" \"npm run start:ui\"",
+    "start:ui": "vite"
+  },
+  "dependencies": {
+    "openai": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.5"
+  }
+}
