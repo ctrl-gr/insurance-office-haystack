@@ -10,6 +10,7 @@ SERVICES = [
     ("The Lion MCP", [sys.executable, "-m", "backend.mcp_servers.lion_server"], 5081),
     ("The Blue Company MCP", [sys.executable, "-m", "backend.mcp_servers.blue_server"], 5082),
     ("The Three Lines MCP", [sys.executable, "-m", "backend.mcp_servers.three_lines_server"], 5083),
+    ("Insurance Conditions RAG MCP", [sys.executable, "-m", "backend.rag.server"], 5084),
     ("Insurance MCP Proxy", [sys.executable, "-m", "backend.mcp_proxy.server"], 5275),
     ("Haystack API", [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--port", "5100"], 5100),
 ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -12,12 +13,13 @@ from backend.mcp_servers.company import CoverageType
 from .client import call_mcp_tool
 
 
-COMPANY_URLS = get_settings().company_urls
+PROVIDER_URLS = get_settings().company_urls
+SERVICE_URLS = get_settings().mcp_service_urls
 AUDIT_LOGGER = get_audit_logger("proxy")
 
 proxy = FastMCP(
     "Insurance MCP Proxy",
-    instructions="Namespaced gateway for the three independent insurance company MCP servers.",
+    instructions="Gateway for three insurance company MCP servers and the insurance conditions RAG service.",
     host="127.0.0.1",
     port=5275,
     stateless_http=True,
@@ -25,22 +27,22 @@ proxy = FastMCP(
 )
 
 
-async def _route(company_id: str, tool_name: str, arguments: dict) -> dict:
+async def _route(service_id: str, tool_name: str, arguments: dict, exposed_tool_name: str | None = None) -> dict:
     request_id = str(uuid.uuid4())
-    namespaced_tool = f"{company_id}_{tool_name}"
+    namespaced_tool = exposed_tool_name or f"{service_id}_{tool_name}"
     started = time.perf_counter()
     audit(
         AUDIT_LOGGER,
         "proxy",
         "route.started",
         request_id=request_id,
-        company=company_id,
+        company=service_id,
         tool=namespaced_tool,
         argument_names=sorted(arguments),
     )
     try:
         result = await call_mcp_tool(
-            COMPANY_URLS[company_id],
+            SERVICE_URLS[service_id],
             tool_name,
             {**arguments, "request_id": request_id},
         )
@@ -51,7 +53,7 @@ async def _route(company_id: str, tool_name: str, arguments: dict) -> dict:
             "proxy",
             "route.completed",
             request_id=request_id,
-            company=company_id,
+            company=service_id,
             tool=namespaced_tool,
             status="success",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -64,7 +66,7 @@ async def _route(company_id: str, tool_name: str, arguments: dict) -> dict:
             "route.failed",
             level=logging.ERROR,
             request_id=request_id,
-            company=company_id,
+            company=service_id,
             tool=namespaced_tool,
             status="error",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -76,14 +78,31 @@ async def _route(company_id: str, tool_name: str, arguments: dict) -> dict:
 
 @proxy.tool()
 def list_company_tools() -> dict:
-    """List every namespaced tool exposed by the connected insurance companies."""
+    """List every insurance company tool and the insurance-conditions RAG tool."""
     return {
         "tools": [
             f"{company}_{tool}"
-            for company in COMPANY_URLS
+            for company in PROVIDER_URLS
             for tool in ("get_quote", "check_coverage", "purchase_policy")
-        ]
+        ] + ["search_insurance_conditions"]
     }
+
+
+@proxy.tool(name="search_insurance_conditions")
+async def search_insurance_conditions(
+    query: str,
+    category: Literal["Car", "Injuries", "Home"] | None = None,
+    policy_name: str | None = None,
+    top_k: int = 5,
+) -> dict:
+    """Retrieve grounded policy conditions from the database. Use for detailed wording, terms, exclusions, and limits."""
+    arguments = {
+        "query": query,
+        "top_k": top_k,
+        **({"category": category} if category else {}),
+        **({"policy_name": policy_name} if policy_name else {}),
+    }
+    return await _route("conditions", "search_conditions", arguments, "search_insurance_conditions")
 
 
 @proxy.tool(name="thelion_get_quote")

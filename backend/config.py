@@ -39,6 +39,18 @@ class Settings:
     lion_mcp_url: str
     blue_mcp_url: str
     three_lines_mcp_url: str
+    conditions_mcp_url: str
+    mongodb_uri: str
+    mongodb_database: str
+    mongodb_policies_collection: str
+    mongodb_chunks_collection: str
+    mongodb_server_selection_timeout_ms: int
+    conditions_auto_ingest: bool
+    rag_chunk_size_words: int
+    rag_chunk_overlap_words: int
+    pdf_download_timeout_seconds: float
+    pdf_max_bytes: int
+    pdf_storage_bearer_token: str | None
     mcp_log_dir: Path
     mcp_log_max_bytes: int
     mcp_log_backup_count: int
@@ -57,6 +69,10 @@ class Settings:
             "thebluecompany": self.blue_mcp_url,
             "thethreelines": self.three_lines_mcp_url,
         }
+
+    @property
+    def mcp_service_urls(self) -> dict[str, str]:
+        return {**self.company_urls, "conditions": self.conditions_mcp_url}
 
     @property
     def generation_kwargs(self) -> dict[str, str]:
@@ -88,6 +104,18 @@ def get_settings() -> Settings:
         lion_mcp_url=os.getenv("LION_MCP_URL", "http://127.0.0.1:5081/mcp"),
         blue_mcp_url=os.getenv("BLUE_MCP_URL", "http://127.0.0.1:5082/mcp"),
         three_lines_mcp_url=os.getenv("THREE_LINES_MCP_URL", "http://127.0.0.1:5083/mcp"),
+        conditions_mcp_url=os.getenv("CONDITIONS_MCP_URL", "http://127.0.0.1:5084/mcp"),
+        mongodb_uri=os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27017"),
+        mongodb_database=os.getenv("MONGODB_DATABASE", "insurance_office"),
+        mongodb_policies_collection=os.getenv("MONGODB_POLICIES_COLLECTION", "insurance_conditions"),
+        mongodb_chunks_collection=os.getenv("MONGODB_CHUNKS_COLLECTION", "insurance_condition_chunks"),
+        mongodb_server_selection_timeout_ms=int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", "5000")),
+        conditions_auto_ingest=_boolean("CONDITIONS_AUTO_INGEST"),
+        rag_chunk_size_words=int(os.getenv("RAG_CHUNK_SIZE_WORDS", "500")),
+        rag_chunk_overlap_words=int(os.getenv("RAG_CHUNK_OVERLAP_WORDS", "75")),
+        pdf_download_timeout_seconds=float(os.getenv("PDF_DOWNLOAD_TIMEOUT_SECONDS", "30")),
+        pdf_max_bytes=int(os.getenv("PDF_MAX_BYTES", "25000000")),
+        pdf_storage_bearer_token=os.getenv("PDF_STORAGE_BEARER_TOKEN", "").strip() or None,
         mcp_log_dir=log_dir,
         mcp_log_max_bytes=int(os.getenv("MCP_LOG_MAX_BYTES", "5000000")),
         mcp_log_backup_count=int(os.getenv("MCP_LOG_BACKUP_COUNT", "5")),

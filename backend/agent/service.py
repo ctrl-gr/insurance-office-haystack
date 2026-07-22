@@ -16,6 +16,7 @@ PROXY_TOOL_NAMES = [
     for company in ("thelion", "thebluecompany", "thethreelines")
     for tool in ("get_quote", "check_coverage", "purchase_policy")
 ]
+PROXY_TOOL_NAMES.append("search_insurance_conditions")
 
 
 @lru_cache(maxsize=1)

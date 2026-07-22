@@ -29,6 +29,7 @@ Insurance MCP proxy :5275
         +-- The Lion MCP :5081
         +-- The Blue Company MCP :5082
         +-- The Three Lines MCP :5083
+        +-- Insurance Conditions RAG MCP :5084
 ```
 
 The Haystack agent connects only to the MCP proxy. It does not import provider pricing functions or policy catalogs. The proxy exposes namespaced tools and forwards each invocation to the appropriate independent provider server.
@@ -39,8 +40,8 @@ The Haystack agent connects only to the MCP proxy. It does not import provider p
 2. The Haystack agent decides whether the question requires a tool.
 3. General questions are answered directly without MCP traffic.
 4. Provider-specific facts and actions go through the MCP proxy.
-5. The proxy creates a correlation ID and forwards the request to one provider server.
-6. The provider returns structured data.
+5. The proxy creates a correlation ID and forwards the request to one provider or the conditions RAG server.
+6. The selected service returns structured data or retrieved condition documents.
 7. The agent interprets the tool result and writes a coherent response instead of displaying raw JSON.
 
 ### MCP tools
@@ -53,11 +54,14 @@ Each provider implements the same three operations:
 | `check_coverage` | Return structured guarantees, exclusions, limits, terms, and deductibles. |
 | `purchase_policy` | Purchase an active quote previously issued by that provider. |
 
-The proxy exposes nine namespaced tools, for example:
+The proxy exposes nine provider tools plus one RAG tool, for example:
 
 - `thelion_get_quote`
 - `thebluecompany_check_coverage`
 - `thethreelines_purchase_policy`
+- `search_insurance_conditions`
+
+The RAG tool searches derived PDF chunks through a custom Haystack retriever. It supports category, exact-policy-name, and result-count filters and returns page-aware sources that the assistant can cite.
 
 ## Technology
 
@@ -66,6 +70,7 @@ The proxy exposes nine namespaced tools, for example:
 - FastAPI
 - MCP Python SDK
 - Haystack MCP integration
+- MongoDB Atlas or Community, and PyMongo
 - OpenAI chat models
 - React 19, TypeScript, and Vite
 - Pytest
@@ -98,12 +103,18 @@ insurance-office-haystack/
 │   │   ├── blue.py              # Blue pricing and policy catalog
 │   │   ├── three_lines.py       # Three Lines pricing and policy catalog
 │   │   └── *_server.py          # Independent MCP process entry points
+│   ├── rag/
+│   │   ├── repository.py        # Policy metadata, chunks, indexes, and queries
+│   │   ├── pdf_ingestion.py     # PDF download, extraction, and Haystack chunking
+│   │   ├── retriever.py         # Custom Haystack retrieval component
+│   │   ├── service.py           # Haystack retrieval pipeline
+│   │   └── server.py            # Conditions MCP process on port 5084
 │   ├── tests/                   # Unit, HTTP integration, and smoke tests
 │   ├── config.py                # Centralized environment configuration
 │   └── mcp_audit.py             # Correlated rotating JSON logs
 ├── InsuranceOfficeUI/           # Original React frontend
 ├── pyproject.toml                # Test and lint configuration
-└── run_services.py               # Starts all five backend processes
+└── run_services.py               # Starts all six backend processes
 ```
 
 ## Prerequisites
@@ -112,6 +123,7 @@ Install:
 
 - Python 3.10 or newer.
 - Node.js 20 or newer.
+- A reachable MongoDB deployment (MongoDB Atlas or Community).
 - An OpenAI API key for conversational mode.
 
 ## Quick start on Windows
@@ -136,6 +148,10 @@ Set your API key in `backend/.env`:
 OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-4.1-mini
 DEMO_MODE=false
+MONGODB_URI=mongodb+srv://your_user:your_url_encoded_password@your_cluster.mongodb.net/?appName=your_app
+MONGODB_DATABASE=insurance_office
+MONGODB_POLICIES_COLLECTION=insurance_conditions
+MONGODB_CHUNKS_COLLECTION=insurance_condition_chunks
 ```
 
 Never commit `backend/.env` or paste the key into logs, issues, or chat messages.
@@ -153,10 +169,11 @@ The launcher starts the services in dependency order:
 | The Lion MCP | `http://127.0.0.1:5081/mcp` |
 | The Blue Company MCP | `http://127.0.0.1:5082/mcp` |
 | The Three Lines MCP | `http://127.0.0.1:5083/mcp` |
+| Insurance Conditions RAG MCP | `http://127.0.0.1:5084/mcp` |
 | Insurance MCP proxy | `http://127.0.0.1:5275/mcp` |
 | FastAPI/Haystack API | `http://127.0.0.1:5100` |
 
-Keep the terminal open. Press `Ctrl+C` to stop all five backend processes.
+Keep the terminal open. Press `Ctrl+C` to stop all six backend processes.
 
 ### Start the frontend
 
@@ -187,6 +204,18 @@ Configuration is read from `backend/.env` by every backend process.
 | `LION_MCP_URL` | `http://127.0.0.1:5081/mcp` | Lion server URL used by the proxy. |
 | `BLUE_MCP_URL` | `http://127.0.0.1:5082/mcp` | Blue server URL used by the proxy. |
 | `THREE_LINES_MCP_URL` | `http://127.0.0.1:5083/mcp` | Three Lines server URL used by the proxy. |
+| `CONDITIONS_MCP_URL` | `http://127.0.0.1:5084/mcp` | Conditions RAG server URL used by the proxy. |
+| `MONGODB_URI` | `mongodb://127.0.0.1:27017` | MongoDB Atlas or Community connection string. Treat it as a secret. |
+| `MONGODB_DATABASE` | `insurance_office` | Database containing the conditions collection. |
+| `MONGODB_POLICIES_COLLECTION` | `insurance_conditions` | Authoritative policy metadata and PDF URLs. |
+| `MONGODB_CHUNKS_COLLECTION` | `insurance_condition_chunks` | Derived, searchable PDF chunks. |
+| `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | `5000` | Fail-fast MongoDB connection timeout. |
+| `CONDITIONS_AUTO_INGEST` | `false` | Download and re-index changed PDFs when the RAG MCP starts. |
+| `RAG_CHUNK_SIZE_WORDS` | `500` | Maximum word count per Haystack chunk. |
+| `RAG_CHUNK_OVERLAP_WORDS` | `75` | Word overlap between adjacent chunks. |
+| `PDF_DOWNLOAD_TIMEOUT_SECONDS` | `30` | Timeout for each policy PDF download. |
+| `PDF_MAX_BYTES` | `25000000` | Maximum accepted PDF size. |
+| `PDF_STORAGE_BEARER_TOKEN` | empty | Optional bearer token for protected PDF storage. |
 | `MCP_LOG_DIR` | `backend/logs` | Directory for MCP audit logs. |
 | `MCP_LOG_MAX_BYTES` | `5000000` | Maximum size of one log file before rotation. |
 | `MCP_LOG_BACKUP_COUNT` | `5` | Number of rotated files retained. |
@@ -205,11 +234,39 @@ The system prompt separates conversation from provider operations:
 - General educational questions do not call MCP tools.
 - A quote comparison calls all three `get_quote` tools.
 - A question about one named provider calls only that provider's coverage tool.
+- Detailed questions about policy wording, terms, exclusions, or limits call `search_insurance_conditions` and cite its source identifiers.
 - A purchase tool is called only after the user explicitly selects and confirms a quote.
 - Tool responses are summarized into natural language.
 - Prices and provider-specific facts are never invented.
 
 The frontend sends the last visible user and assistant messages with every request. It does not currently persist conversations in a database.
+
+## Insurance conditions RAG
+
+Policy metadata stays in `insurance_conditions`; PDF text is stored separately in `insurance_condition_chunks`. The first collection remains the source of truth, while the second can always be rebuilt. The RAG service creates a unique chunk identity index, a category/policy filter index, and a weighted text index.
+
+MongoDB `$text` search provides ranked sparse retrieval across policy names and PDF content. A custom Haystack component converts matching chunks into Haystack `Document` objects. The conditions MCP returns policy, page, and chunk citations to the conversational agent.
+
+Expected source document in `insurance_conditions`:
+
+```json
+{
+  "id": 1,
+  "category": "Car",
+  "name_conditions": "SafeCar26.1",
+  "storage_url": "https://storage.example/safe-car-26.pdf"
+}
+```
+
+Download changed PDFs, extract page text, split it with Haystack, and rebuild their chunks with:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.rag.pdf_ingestion
+```
+
+Repeated runs skip PDFs whose SHA-256 hash has not changed. Successful ingestion adds `rag_indexed_pdf_hash`, `rag_indexed_at`, and `rag_chunk_count` to the metadata document. Each derived chunk records its page, position, text, hashes, and a citation such as `SafeCar26.1#page-7-chunk-0`.
+
+The current `http://storage.com/...` values are placeholders unless that host is controlled by your application. Replace them with URLs that return actual PDF bytes. Scanned image-only PDFs require OCR before this pipeline can index them.
 
 ## Quotes and purchases
 
@@ -255,7 +312,7 @@ A correctly configured result reports:
   "status": "ok",
   "engine": "Haystack",
   "proxy": "connected",
-  "toolCount": 9,
+  "toolCount": 10,
   "mode": "live"
 }
 ```
@@ -310,6 +367,7 @@ Every company-bound request produces correlated JSON Lines entries in:
 - `backend/logs/mcp-lion.log`
 - `backend/logs/mcp-blue.log`
 - `backend/logs/mcp-three-lines.log`
+- `backend/logs/mcp-conditions.log`
 
 The proxy and company entries share the same `request_id`. Records include the service, event, company, tool, status, and duration. Customer ages, insured values, premiums, results, and API keys are deliberately omitted.
 
@@ -337,6 +395,7 @@ The suite covers:
 - Model compatibility settings.
 - API request contracts.
 - MCP audit formatting.
+- MongoDB condition ingestion, filtering, and Haystack retrieval.
 
 With the backend services running, execute the live smoke test:
 
@@ -368,7 +427,7 @@ Another backend instance is probably running. Find listeners with:
 
 ```powershell
 Get-NetTCPConnection -State Listen |
-  Where-Object LocalPort -in 5081,5082,5083,5100,5275 |
+  Where-Object LocalPort -in 5081,5082,5083,5084,5100,5275 |
   Select-Object LocalPort,OwningProcess
 ```
 
@@ -382,6 +441,16 @@ The first `python -m venv .venv` may spend time installing pip. Let it finish. I
 
 Haystack imports can be slow on the first run. The launcher allows up to 90 seconds for each service and reports when all services are ready.
 
+### The Conditions RAG service does not start
+
+Confirm that MongoDB is reachable using `MONGODB_URI`. For Atlas, allow your current IP in Network Access, create a database user, and URL-encode reserved characters in its password. For local Community, verify port `27017`:
+
+```powershell
+Get-NetTCPConnection -LocalPort 27017 -State Listen
+```
+
+Run `python -m backend.rag.pdf_ingestion` before starting the services. HTTP errors point to an invalid or inaccessible `storage_url`; a no-text error means the PDF requires OCR.
+
 ## Current limitations
 
 - Provider data and purchases are illustrative.
@@ -389,11 +458,13 @@ Haystack imports can be slow on the first run. The launcher allows up to 90 seco
 - There is no authentication or customer database.
 - Chat history is supplied by the frontend rather than persisted by the backend.
 - The OpenAI integration currently uses Chat Completions rather than the Responses API.
+- Conditions retrieval currently uses MongoDB `$text` sparse search; semantic embeddings and vector search are not configured.
 - The original frontend is intentionally unchanged and still contains unused legacy `.NET` start scripts.
 
 ## Security notes
 
 - Keep `backend/.env` out of version control.
+- Treat `MONGODB_URI` as a secret when it contains credentials.
 - Never log or return the OpenAI API key.
 - MCP audit records intentionally exclude business payload values.
 - Add authentication, authorization, persistent storage, and durable audit retention before treating this architecture as production-ready.
