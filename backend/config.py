@@ -107,7 +107,7 @@ def get_settings() -> Settings:
         conditions_mcp_url=os.getenv("CONDITIONS_MCP_URL", "http://127.0.0.1:5084/mcp"),
         mongodb_uri=os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27017"),
         mongodb_database=os.getenv("MONGODB_DATABASE", "insurance_office"),
-        mongodb_policies_collection=os.getenv("MONGODB_POLICIES_COLLECTION", "insurance_conditions"),
+        mongodb_policies_collection=os.getenv("MONGODB_POLICIES_COLLECTION", "policy_conditions"),
         mongodb_chunks_collection=os.getenv("MONGODB_CHUNKS_COLLECTION", "insurance_condition_chunks"),
         mongodb_server_selection_timeout_ms=int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", "5000")),
         conditions_auto_ingest=_boolean("CONDITIONS_AUTO_INGEST"),

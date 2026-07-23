@@ -11,6 +11,7 @@ from haystack.components.preprocessors import DocumentSplitter
 from pypdf import PdfReader
 
 from backend.config import Settings, get_settings
+from backend.tls import windows_trust_store
 from .repository import MongoInsuranceConditionsRepository
 
 
@@ -21,7 +22,12 @@ class PdfDownloader:
         self.headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else {}
 
     def download(self, url: str) -> bytes:
-        with httpx.Client(follow_redirects=True, timeout=self.timeout_seconds, headers=self.headers) as client:
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=self.timeout_seconds,
+            headers=self.headers,
+            **windows_trust_store(),
+        ) as client:
             response = client.get(url)
             response.raise_for_status()
         content = response.content

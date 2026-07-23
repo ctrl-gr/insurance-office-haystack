@@ -150,7 +150,7 @@ OPENAI_MODEL=gpt-4.1-mini
 DEMO_MODE=false
 MONGODB_URI=mongodb+srv://your_user:your_url_encoded_password@your_cluster.mongodb.net/?appName=your_app
 MONGODB_DATABASE=insurance_office
-MONGODB_POLICIES_COLLECTION=insurance_conditions
+MONGODB_POLICIES_COLLECTION=policy_conditions
 MONGODB_CHUNKS_COLLECTION=insurance_condition_chunks
 ```
 
@@ -207,7 +207,7 @@ Configuration is read from `backend/.env` by every backend process.
 | `CONDITIONS_MCP_URL` | `http://127.0.0.1:5084/mcp` | Conditions RAG server URL used by the proxy. |
 | `MONGODB_URI` | `mongodb://127.0.0.1:27017` | MongoDB Atlas or Community connection string. Treat it as a secret. |
 | `MONGODB_DATABASE` | `insurance_office` | Database containing the conditions collection. |
-| `MONGODB_POLICIES_COLLECTION` | `insurance_conditions` | Authoritative policy metadata and PDF URLs. |
+| `MONGODB_POLICIES_COLLECTION` | `policy_conditions` | Authoritative policy metadata and PDF URLs. |
 | `MONGODB_CHUNKS_COLLECTION` | `insurance_condition_chunks` | Derived, searchable PDF chunks. |
 | `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | `5000` | Fail-fast MongoDB connection timeout. |
 | `CONDITIONS_AUTO_INGEST` | `false` | Download and re-index changed PDFs when the RAG MCP starts. |
@@ -243,11 +243,11 @@ The frontend sends the last visible user and assistant messages with every reque
 
 ## Insurance conditions RAG
 
-Policy metadata stays in `insurance_conditions`; PDF text is stored separately in `insurance_condition_chunks`. The first collection remains the source of truth, while the second can always be rebuilt. The RAG service creates a unique chunk identity index, a category/policy filter index, and a weighted text index.
+Policy metadata stays in `policy_conditions`; PDF text is stored separately in `insurance_condition_chunks`. The first collection remains the source of truth, while the second can always be rebuilt. The RAG service creates a unique chunk identity index, a category/policy filter index, and a weighted text index.
 
 MongoDB `$text` search provides ranked sparse retrieval across policy names and PDF content. A custom Haystack component converts matching chunks into Haystack `Document` objects. The conditions MCP returns policy, page, and chunk citations to the conversational agent.
 
-Expected source document in `insurance_conditions`:
+Expected source document in `policy_conditions`:
 
 ```json
 {
