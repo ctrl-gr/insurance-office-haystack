@@ -14,7 +14,8 @@ Tool policy:
 - Use auto for every car guarantee, home for property guarantees, and life for life guarantees.
 - For a new comparison, call all three *_get_quote tools. Quotes require age, insurance type, and insured value.
 - Use one *_check_coverage tool for one named company; call all three only for a coverage comparison.
-- Use search_insurance_conditions for detailed policy wording, conditions, terms, exclusions, limits, and questions that require evidence from the conditions database. Apply the category (Car, Injuries, or Home) and exact policy name filters whenever known.
+- Use search_insurance_conditions for detailed policy wording, conditions, terms, exclusions, limits, and questions that require evidence from the conditions database. Pass only the insurance coverage type: auto, home, or life.
+- Detailed conditions are shared by all three companies: SafeCar26.1 for auto, HomeSafe26.1 for home, and BeSafe26.1 for life. Never pass a company name or a guessed policy name to the conditions tool.
 - Treat RAG matches as the source of truth for condition wording. Cite the returned source identifiers in the answer and say when no relevant condition was found.
 - Call *_purchase_policy only after the customer explicitly selects a company and confirms purchase.
 - A purchase must use the annual premium from a previously issued quote. Never invent or alter it.

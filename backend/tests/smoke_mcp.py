@@ -13,11 +13,11 @@ async def main() -> None:
 
     conditions = await call_proxy_tool(
         "search_insurance_conditions",
-        {"query": "theft exclusions", "category": "Car", "policy_name": "SafeCar26.1"},
+        {"query": "theft exclusions", "coverage_type": "auto"},
     )
     assert conditions["resultCount"] >= 1
-    assert conditions["matches"][0]["conditionCode"] == "replacement_car"
-    assert conditions["matches"][0]["terms"] == "Up to 30 days"
+    assert conditions["matches"][0]["policyName"] == "SafeCar26.1"
+    assert conditions["matches"][0]["pageNumber"] >= 1
 
     lion_quote = await call_proxy_tool(
         "thelion_get_quote",
@@ -47,14 +47,14 @@ async def main() -> None:
         rag_response = await client.post(
             "http://127.0.0.1:5100/api/chat",
             json={
-                "message": "According to the conditions database, how long does Blue provide a replacement car for an auto policy? Cite the source.",
+                "message": "According to the shared auto conditions, how long is a replacement car provided? Cite the source.",
                 "history": [],
             },
         )
         rag_response.raise_for_status()
         rag_reply = rag_response.json()["reply"]
-        assert "30" in rag_reply
-        assert "blue/auto/replacement_car" in rag_reply
+        assert "10" in rag_reply
+        assert "SafeCar26.1" in rag_reply
 
     print("MCP proxy, RAG retrieval, verified purchase, and conversational API smoke test passed")
 

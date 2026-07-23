@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from backend.config import get_settings
 from backend.rag.pdf_ingestion import PolicyPdfIngestor
+from backend.rag.coverage_mapping import category_for_coverage
 from backend.rag.repository import MongoInsuranceConditionsRepository
 from backend.rag.service import InsuranceConditionsRag
 
@@ -41,6 +42,12 @@ class FakeChunker:
                 "source": f"{policy['name_conditions']}#page-7-chunk-0",
             }
         ]
+
+
+def test_coverage_types_map_to_shared_policy_categories():
+    assert category_for_coverage("auto") == "Car"
+    assert category_for_coverage("home") == "Home"
+    assert category_for_coverage("life") == "Injuries"
 
 
 def test_mongodb_query_contains_text_search_and_policy_filters():

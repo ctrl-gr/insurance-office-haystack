@@ -61,7 +61,7 @@ The proxy exposes nine provider tools plus one RAG tool, for example:
 - `thethreelines_purchase_policy`
 - `search_insurance_conditions`
 
-The RAG tool searches derived PDF chunks through a custom Haystack retriever. It supports category, exact-policy-name, and result-count filters and returns page-aware sources that the assistant can cite.
+The RAG tool searches derived PDF chunks through a custom Haystack retriever. It accepts `auto`, `home`, or `life`, maps that type to one shared policy for all three companies, and returns page-aware sources that the assistant can cite.
 
 ## Technology
 
@@ -235,6 +235,7 @@ The system prompt separates conversation from provider operations:
 - A quote comparison calls all three `get_quote` tools.
 - A question about one named provider calls only that provider's coverage tool.
 - Detailed questions about policy wording, terms, exclusions, or limits call `search_insurance_conditions` and cite its source identifiers.
+- Detailed conditions are shared across providers: `SafeCar26.1` for auto, `HomeSafe26.1` for home, and `BeSafe26.1` for life.
 - A purchase tool is called only after the user explicitly selects and confirms a quote.
 - Tool responses are summarized into natural language.
 - Prices and provider-specific facts are never invented.

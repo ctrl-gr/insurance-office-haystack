@@ -3,23 +3,21 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Literal
-
 from mcp.server.fastmcp import FastMCP
 
 from backend.config import get_settings
 from backend.mcp_audit import audit, get_audit_logger
+from .coverage_mapping import CoverageType, category_for_coverage
 from .service import InsuranceConditionsRag
 
 
-PolicyCategory = Literal["Car", "Injuries", "Home"]
 settings = get_settings()
 rag = InsuranceConditionsRag(settings)
 logger = get_audit_logger("conditions")
 
 mcp = FastMCP(
     "Insurance Conditions RAG",
-    instructions="Retrieve grounded insurance policy conditions from the insurance_conditions database.",
+    instructions="Retrieve shared grounded policy conditions from the policy_conditions database by coverage type.",
     host="127.0.0.1",
     port=5084,
     stateless_http=True,
@@ -30,14 +28,14 @@ mcp = FastMCP(
 @mcp.tool(name="search_conditions")
 def search_conditions(
     query: str,
-    category: PolicyCategory | None = None,
-    policy_name: str | None = None,
+    coverage_type: CoverageType,
     top_k: int = 5,
     request_id: str | None = None,
 ) -> dict:
-    """Retrieve relevant policy wording from insurance_conditions. Use filters when the provider or product is known."""
+    """Retrieve shared policy wording for auto, home, or life. Conditions are identical for all three companies."""
     trace_id = request_id or str(uuid.uuid4())
     started = time.perf_counter()
+    category = category_for_coverage(coverage_type)
     audit(
         logger,
         "conditions",
@@ -45,7 +43,7 @@ def search_conditions(
         request_id=trace_id,
         tool="search_conditions",
         category=category,
-        policy_name=policy_name,
+        coverage_type=coverage_type,
         top_k=top_k,
     )
     try:
@@ -53,7 +51,7 @@ def search_conditions(
             raise ValueError("query must not be empty")
         if not 1 <= top_k <= 10:
             raise ValueError("top_k must be between 1 and 10")
-        matches = rag.search(query, category, policy_name, top_k)
+        matches = rag.search(query, category=category, top_k=top_k)
         audit(
             logger,
             "conditions",

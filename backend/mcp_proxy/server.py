@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -91,16 +90,14 @@ def list_company_tools() -> dict:
 @proxy.tool(name="search_insurance_conditions")
 async def search_insurance_conditions(
     query: str,
-    category: Literal["Car", "Injuries", "Home"] | None = None,
-    policy_name: str | None = None,
+    coverage_type: CoverageType,
     top_k: int = 5,
 ) -> dict:
-    """Retrieve grounded policy conditions from the database. Use for detailed wording, terms, exclusions, and limits."""
+    """Retrieve shared conditions for auto, home, or life. The detailed wording is the same for every company."""
     arguments = {
         "query": query,
+        "coverage_type": coverage_type,
         "top_k": top_k,
-        **({"category": category} if category else {}),
-        **({"policy_name": policy_name} if policy_name else {}),
     }
     return await _route("conditions", "search_conditions", arguments, "search_insurance_conditions")
 
