@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Any
 
 from haystack.components.agents import Agent
 from haystack.dataclasses import ChatMessage
@@ -49,6 +51,55 @@ def build_messages(message: str, history: list[dict[str, str]]) -> list[ChatMess
     return messages
 
 
-def run_agent(message: str, history: list[dict[str, str]]) -> str:
+def _tool_result_payload(value: Any) -> dict | None:
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if isinstance(value, list):
+        text = "".join(getattr(part, "text", "") for part in value)
+        return _tool_result_payload(text)
+    return None
+
+
+def extract_citations(messages: list[ChatMessage]) -> list[dict]:
+    citations: list[dict] = []
+    seen: set[tuple[str, int, str]] = set()
+    for message in messages:
+        for tool_result in message.tool_call_results:
+            if tool_result.error or tool_result.origin.tool_name != "search_insurance_conditions":
+                continue
+            payload = _tool_result_payload(tool_result.result)
+            for match in payload.get("matches", []) if payload else []:
+                if not isinstance(match, dict):
+                    continue
+                policy_name = match.get("policyName")
+                page_number = match.get("pageNumber")
+                source = match.get("source")
+                if not isinstance(policy_name, str) or not isinstance(page_number, int) or not isinstance(source, str):
+                    continue
+                identity = (policy_name, page_number, source)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                citations.append(
+                    {
+                        "policyName": policy_name,
+                        "pageNumber": page_number,
+                        "url": match.get("storageUrl") if isinstance(match.get("storageUrl"), str) else None,
+                        "source": source,
+                    }
+                )
+    return citations
+
+
+def run_agent_response(message: str, history: list[dict[str, str]]) -> dict:
     result = get_agent().run(messages=build_messages(message, history))
-    return result["last_message"].text or "I couldn't produce a response. Please try again."
+    reply = result["last_message"].text or "I couldn't produce a response. Please try again."
+    return {"reply": reply, "citations": extract_citations(result.get("messages", []))}
+
+
+def run_agent(message: str, history: list[dict[str, str]]) -> str:
+    return run_agent_response(message, history)["reply"]

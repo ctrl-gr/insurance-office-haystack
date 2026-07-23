@@ -1,7 +1,10 @@
-from haystack.dataclasses import ChatMessage
+import json
+
+from haystack.dataclasses import ChatMessage, ToolCall
 
 import backend.config as config
 from backend.agent import build_messages
+from backend.agent.service import extract_citations
 from backend.config import get_settings
 
 
@@ -25,6 +28,28 @@ def test_build_messages_preserves_conversation_and_latest_question():
         "What would you like to understand about it?",
         "It includes collision coverage.",
         "What exclusions should I check?",
+    ]
+
+
+def test_extract_citations_uses_condition_tool_results_and_deduplicates_sources():
+    match = {
+        "policyName": "SafeCar26.1",
+        "pageNumber": 2,
+        "storageUrl": "https://example.test/SafeCar26.1.pdf",
+        "source": "SafeCar26.1#page-2-chunk-1",
+    }
+    message = ChatMessage.from_tool(
+        json.dumps({"matches": [match, match], "resultCount": 2}),
+        ToolCall(tool_name="search_insurance_conditions", arguments={"coverage_type": "auto"}),
+    )
+
+    assert extract_citations([message]) == [
+        {
+            "policyName": "SafeCar26.1",
+            "pageNumber": 2,
+            "url": "https://example.test/SafeCar26.1.pdf",
+            "source": "SafeCar26.1#page-2-chunk-1",
+        }
     ]
 
 

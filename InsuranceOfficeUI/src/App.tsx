@@ -57,7 +57,11 @@ export default function App() {
       const data = await res.json();
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.reply },
+        {
+          role: "assistant",
+          content: data.reply,
+          citations: Array.isArray(data.citations) ? data.citations : [],
+        },
       ]);
     } catch (err) {
       setMessages((prev) => [

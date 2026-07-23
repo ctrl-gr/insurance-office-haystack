@@ -1,6 +1,14 @@
+export interface Citation {
+  policyName: string;
+  pageNumber: number;
+  url?: string | null;
+  source: string;
+}
+
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  citations?: Citation[];
 }
 
 export const SUGGESTIONS = [

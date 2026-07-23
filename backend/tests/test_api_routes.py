@@ -43,6 +43,7 @@ def test_unconfigured_chat_returns_actionable_reply_without_upstream_call(monkey
 
     assert response.status_code == 200
     assert response.json()["mode"] == "unconfigured"
+    assert response.json()["citations"] == []
     assert "OPENAI_API_KEY" in response.json()["reply"]
 
 
