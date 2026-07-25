@@ -54,11 +54,20 @@ class MongoInsuranceConditionsRepository:
                 "name_conditions": document["name_conditions"],
                 "storage_url": document["storage_url"],
                 "indexed_pdf_hash": document.get("rag_indexed_pdf_hash"),
+                "indexed_embedding_model": document.get("rag_embedding_model"),
+                "indexed_ingestion_version": document.get("rag_ingestion_version"),
             }
             for document in self.policies.find(query)
         ]
 
-    def replace_policy_chunks(self, policy: dict, pdf_hash: str, chunks: list[dict]) -> int:
+    def replace_policy_chunks(
+        self,
+        policy: dict,
+        pdf_hash: str,
+        chunks: list[dict],
+        embedding_model: str | None = None,
+        ingestion_version: int = 1,
+    ) -> int:
         now = datetime.now(timezone.utc)
         operations = []
         for chunk in chunks:
@@ -79,6 +88,8 @@ class MongoInsuranceConditionsRepository:
                 "source": chunk["source"],
                 "indexed_at": now,
             }
+            if chunk.get("embedding") is not None:
+                document["embedding"] = chunk["embedding"]
             operations.append(UpdateOne(identity, {"$set": document}, upsert=True))
         if operations:
             self.chunks.bulk_write(operations, ordered=False)
@@ -87,15 +98,21 @@ class MongoInsuranceConditionsRepository:
         )
         from bson import ObjectId
 
+        policy_update: dict = {
+            "$set": {
+                "rag_indexed_pdf_hash": pdf_hash,
+                "rag_indexed_at": now,
+                "rag_chunk_count": len(chunks),
+                "rag_ingestion_version": ingestion_version,
+            }
+        }
+        if embedding_model:
+            policy_update["$set"]["rag_embedding_model"] = embedding_model
+        else:
+            policy_update["$unset"] = {"rag_embedding_model": ""}
         self.policies.update_one(
             {"_id": ObjectId(policy["policy_mongo_id"])},
-            {
-                "$set": {
-                    "rag_indexed_pdf_hash": pdf_hash,
-                    "rag_indexed_at": now,
-                    "rag_chunk_count": len(chunks),
-                }
-            },
+            policy_update,
         )
         return len(chunks)
 
@@ -108,14 +125,9 @@ class MongoInsuranceConditionsRepository:
             filters["name_conditions"] = {"$regex": f"^{re.escape(policy_name)}$", "$options": "i"}
         return filters
 
-    def search(
-        self,
-        query: str,
-        category: str | None = None,
-        policy_name: str | None = None,
-        top_k: int = 5,
-    ) -> list[dict]:
-        projection = {
+    @staticmethod
+    def _projection() -> dict:
+        return {
             "policy_id": 1,
             "policy_mongo_id": 1,
             "category": 1,
@@ -125,6 +137,25 @@ class MongoInsuranceConditionsRepository:
             "chunk_index": 1,
             "content": 1,
             "source": 1,
+        }
+
+    @staticmethod
+    def _rows(cursor) -> list[dict]:
+        results = []
+        for document in cursor:
+            document_id = str(document.pop("_id"))
+            results.append({**document, "id": document_id})
+        return results
+
+    def search(
+        self,
+        query: str,
+        category: str | None = None,
+        policy_name: str | None = None,
+        top_k: int = 5,
+    ) -> list[dict]:
+        projection = {
+            **self._projection(),
             "score": {"$meta": "textScore"},
         }
         cursor = (
@@ -132,8 +163,71 @@ class MongoInsuranceConditionsRepository:
             .sort([("score", {"$meta": "textScore"})])
             .limit(top_k)
         )
-        results = []
-        for document in cursor:
-            document_id = str(document.pop("_id"))
-            results.append({**document, "id": document_id})
-        return results
+        return self._rows(cursor)
+
+    @staticmethod
+    def build_vector_filter(category: str | None, policy_name: str | None) -> dict | None:
+        filters = {}
+        if category:
+            filters["category"] = category
+        if policy_name:
+            filters["name_conditions"] = policy_name
+        return filters or None
+
+    def vector_search(
+        self,
+        query_embedding: list[float],
+        *,
+        vector_index: str,
+        category: str | None = None,
+        policy_name: str | None = None,
+        top_k: int = 5,
+        num_candidates: int = 50,
+    ) -> list[dict]:
+        vector_stage = {
+            "index": vector_index,
+            "path": "embedding",
+            "queryVector": query_embedding,
+            "numCandidates": max(num_candidates, top_k),
+            "limit": top_k,
+        }
+        filters = self.build_vector_filter(category, policy_name)
+        if filters:
+            vector_stage["filter"] = filters
+        pipeline = [
+            {"$vectorSearch": vector_stage},
+            {"$set": {"score": {"$meta": "vectorSearchScore"}}},
+            {"$project": {**self._projection(), "score": 1}},
+        ]
+        return self._rows(self.chunks.aggregate(pipeline))
+
+    def hybrid_search(
+        self,
+        query: str,
+        query_embedding: list[float],
+        *,
+        vector_index: str,
+        category: str | None = None,
+        policy_name: str | None = None,
+        top_k: int = 5,
+        num_candidates: int = 50,
+        rrf_k: int = 60,
+    ) -> list[dict]:
+        if rrf_k < 1:
+            raise ValueError("RAG_HYBRID_RRF_K must be positive")
+        pool_size = max(top_k * 2, top_k)
+        text_rows = self.search(query, category, policy_name, pool_size)
+        vector_rows = self.vector_search(
+            query_embedding,
+            vector_index=vector_index,
+            category=category,
+            policy_name=policy_name,
+            top_k=pool_size,
+            num_candidates=num_candidates,
+        )
+        combined: dict[str, dict] = {}
+        for rows in (text_rows, vector_rows):
+            for rank, row in enumerate(rows, start=1):
+                item = combined.setdefault(row["id"], {**row, "score": 0.0})
+                item["score"] += 1 / (rrf_k + rank)
+        return sorted(combined.values(), key=lambda row: row["score"], reverse=True)[:top_k]

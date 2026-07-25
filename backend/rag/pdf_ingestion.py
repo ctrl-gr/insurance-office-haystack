@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Protocol
 
 import httpx
 from haystack import Document
@@ -13,6 +14,15 @@ from pypdf import PdfReader
 from backend.config import Settings, get_settings
 from backend.tls import windows_trust_store
 from .repository import MongoInsuranceConditionsRepository
+
+
+INGESTION_VERSION = 2
+
+
+class ChunkEmbedder(Protocol):
+    model: str
+
+    def embed_chunks(self, chunks: list[dict]) -> list[dict]: ...
 
 
 class PdfDownloader:
@@ -55,7 +65,9 @@ class PdfChunker:
         for page_number, page in enumerate(reader.pages, start=1):
             text = (page.extract_text() or "").strip()
             if text:
-                pages.append(Document(content=text, meta={"page_number": page_number}))
+                # DocumentSplitter uses page_number for its own split-page metadata.
+                # Preserve the original PDF page under a domain-specific key.
+                pages.append(Document(content=text, meta={"policy_page_number": page_number}))
         if not pages:
             raise ValueError("PDF contains no extractable text; OCR is required")
 
@@ -65,7 +77,7 @@ class PdfChunker:
             content = (document.content or "").strip()
             if not content:
                 continue
-            page_number = int(document.meta["page_number"])
+            page_number = int(document.meta["policy_page_number"])
             source = f"{policy['name_conditions']}#page-{page_number}-chunk-{chunk_index}"
             chunks.append(
                 {
@@ -94,10 +106,12 @@ class PolicyPdfIngestor:
         repository: MongoInsuranceConditionsRepository,
         downloader: PdfDownloader,
         chunker: PdfChunker,
+        embedder: ChunkEmbedder | None = None,
     ):
         self.repository = repository
         self.downloader = downloader
         self.chunker = chunker
+        self.embedder = embedder
 
     def run(self) -> IngestionSummary:
         indexed = skipped = failed = total_chunks = 0
@@ -106,12 +120,25 @@ class PolicyPdfIngestor:
             try:
                 pdf_bytes = self.downloader.download(policy["storage_url"])
                 pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
-                if policy.get("indexed_pdf_hash") == pdf_hash:
+                embeddings_current = (
+                    self.embedder is None
+                    or policy.get("indexed_embedding_model") == self.embedder.model
+                )
+                ingestion_current = policy.get("indexed_ingestion_version") == INGESTION_VERSION
+                if policy.get("indexed_pdf_hash") == pdf_hash and embeddings_current and ingestion_current:
                     skipped += 1
                     results.append({"policy": policy["name_conditions"], "status": "skipped"})
                     continue
                 chunks = self.chunker.extract(pdf_bytes, policy)
-                count = self.repository.replace_policy_chunks(policy, pdf_hash, chunks)
+                if self.embedder:
+                    chunks = self.embedder.embed_chunks(chunks)
+                count = self.repository.replace_policy_chunks(
+                    policy,
+                    pdf_hash,
+                    chunks,
+                    embedding_model=self.embedder.model if self.embedder else None,
+                    ingestion_version=INGESTION_VERSION,
+                )
                 indexed += 1
                 total_chunks += count
                 results.append({"policy": policy["name_conditions"], "status": "indexed", "chunks": count})
@@ -127,7 +154,11 @@ class PolicyPdfIngestor:
         return IngestionSummary(indexed, skipped, failed, total_chunks, results)
 
 
-def build_ingestor(settings: Settings, repository: MongoInsuranceConditionsRepository | None = None) -> PolicyPdfIngestor:
+def build_ingestor(
+    settings: Settings,
+    repository: MongoInsuranceConditionsRepository | None = None,
+    embedder: ChunkEmbedder | None = None,
+) -> PolicyPdfIngestor:
     repository = repository or MongoInsuranceConditionsRepository(
         settings.mongodb_uri,
         settings.mongodb_database,
@@ -135,6 +166,10 @@ def build_ingestor(settings: Settings, repository: MongoInsuranceConditionsRepos
         settings.mongodb_chunks_collection,
         settings.mongodb_server_selection_timeout_ms,
     )
+    if settings.rag_retrieval_mode == "hybrid" and embedder is None:
+        from .embeddings import InsuranceConditionEmbedder
+
+        embedder = InsuranceConditionEmbedder(settings)
     return PolicyPdfIngestor(
         repository,
         PdfDownloader(
@@ -143,6 +178,7 @@ def build_ingestor(settings: Settings, repository: MongoInsuranceConditionsRepos
             settings.pdf_storage_bearer_token,
         ),
         PdfChunker(settings.rag_chunk_size_words, settings.rag_chunk_overlap_words),
+        embedder,
     )
 
 

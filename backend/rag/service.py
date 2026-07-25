@@ -17,12 +17,20 @@ class InsuranceConditionsRag:
             settings.mongodb_chunks_collection,
             settings.mongodb_server_selection_timeout_ms,
         )
+        embedder = None
+        if settings.rag_retrieval_mode == "hybrid":
+            from .embeddings import InsuranceConditionEmbedder
+
+            embedder = InsuranceConditionEmbedder(settings)
         if settings.conditions_auto_ingest:
-            summary = build_ingestor(settings, self.repository).run()
+            summary = build_ingestor(settings, self.repository, embedder).run()
             if summary.failed:
                 raise RuntimeError(f"PDF ingestion failed for {summary.failed} policies")
         self.pipeline = Pipeline()
-        self.pipeline.add_component("retriever", MongoInsuranceConditionsRetriever(self.repository))
+        self.pipeline.add_component(
+            "retriever",
+            MongoInsuranceConditionsRetriever(self.repository, settings, embedder),
+        )
 
     def search(
         self,

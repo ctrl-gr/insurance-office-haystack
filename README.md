@@ -209,8 +209,14 @@ Configuration is read from `backend/.env` by every backend process.
 | `MONGODB_DATABASE` | `insurance_office` | Database containing the conditions collection. |
 | `MONGODB_POLICIES_COLLECTION` | `policy_conditions` | Authoritative policy metadata and PDF URLs. |
 | `MONGODB_CHUNKS_COLLECTION` | `insurance_condition_chunks` | Derived, searchable PDF chunks. |
+| `MONGODB_VECTOR_INDEX` | `condition_chunk_vector_index` | Atlas Vector Search index used by hybrid retrieval. |
 | `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | `5000` | Fail-fast MongoDB connection timeout. |
 | `CONDITIONS_AUTO_INGEST` | `false` | Download and re-index changed PDFs when the RAG MCP starts. |
+| `RAG_RETRIEVAL_MODE` | `text` | Retrieval strategy: `text` or `hybrid`. |
+| `RAG_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used for policy chunks and questions. |
+| `RAG_EMBEDDING_DIMENSIONS` | `1536` | Vector size; it must match the Atlas index. |
+| `RAG_VECTOR_CANDIDATES` | `50` | Candidate vectors considered before ranking. |
+| `RAG_HYBRID_RRF_K` | `60` | Reciprocal-rank-fusion constant for text and vector results. |
 | `RAG_CHUNK_SIZE_WORDS` | `500` | Maximum word count per Haystack chunk. |
 | `RAG_CHUNK_OVERLAP_WORDS` | `75` | Word overlap between adjacent chunks. |
 | `PDF_DOWNLOAD_TIMEOUT_SECONDS` | `30` | Timeout for each policy PDF download. |
@@ -246,7 +252,7 @@ The frontend sends the last visible user and assistant messages with every reque
 
 Policy metadata stays in `policy_conditions`; PDF text is stored separately in `insurance_condition_chunks`. The first collection remains the source of truth, while the second can always be rebuilt. The RAG service creates a unique chunk identity index, a category/policy filter index, and a weighted text index.
 
-MongoDB `$text` search provides ranked sparse retrieval across policy names and PDF content. A custom Haystack component converts matching chunks into Haystack `Document` objects. The conditions MCP returns policy, page, and chunk citations to the conversational agent.
+The default `text` mode uses MongoDB `$text` search and requires no embedding calls. The optional `hybrid` mode combines exact text matches with semantic Atlas Vector Search using reciprocal rank fusion. If embedding or vector retrieval is temporarily unavailable, it logs the failure and falls back to text search. A custom Haystack component converts matching chunks into Haystack `Document` objects. The conditions MCP returns policy, page, chunk, and retrieval-mode metadata to the conversational agent.
 
 Expected source document in `policy_conditions`:
 
@@ -265,7 +271,68 @@ Download changed PDFs, extract page text, split it with Haystack, and rebuild th
 .\.venv\Scripts\python.exe -m backend.rag.pdf_ingestion
 ```
 
-Repeated runs skip PDFs whose SHA-256 hash has not changed. Successful ingestion adds `rag_indexed_pdf_hash`, `rag_indexed_at`, and `rag_chunk_count` to the metadata document. Each derived chunk records its page, position, text, hashes, and a citation such as `SafeCar26.1#page-7-chunk-0`.
+Repeated runs skip PDFs whose SHA-256 hash and ingestion version have not changed. Successful ingestion adds `rag_indexed_pdf_hash`, `rag_indexed_at`, `rag_ingestion_version`, and `rag_chunk_count` to the metadata document. Version changes force derived chunks to be rebuilt, which prevents stale citation formats from surviving a chunker upgrade. Each chunk records its original PDF page, position, text, hashes, and a citation such as `SafeCar26.1#page-3-chunk-2`.
+
+### Enable hybrid retrieval
+
+Hybrid mode requires a deployment that supports MongoDB `$vectorSearch`. In MongoDB Atlas, create a Vector Search index named `condition_chunk_vector_index` on `insurance_condition_chunks`:
+
+```json
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "embedding",
+      "numDimensions": 1536,
+      "similarity": "cosine"
+    },
+    {
+      "type": "filter",
+      "path": "category"
+    },
+    {
+      "type": "filter",
+      "path": "name_conditions"
+    }
+  ]
+}
+```
+
+Then update `backend/.env`:
+
+```dotenv
+RAG_RETRIEVAL_MODE=hybrid
+MONGODB_VECTOR_INDEX=condition_chunk_vector_index
+RAG_EMBEDDING_MODEL=text-embedding-3-small
+RAG_EMBEDDING_DIMENSIONS=1536
+```
+
+Re-run ingestion after enabling hybrid mode:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.rag.pdf_ingestion
+```
+
+The ingestor notices that existing chunks do not have embeddings for the selected model and enriches them even when the PDF hash has not changed. Restart the backend services after ingestion.
+
+### Evaluate retrieval
+
+The grounded dataset in `backend/rag/evaluation_cases.json` contains natural-language questions, expected policies, pages, and required terms taken from the sample PDFs. Run it against the database configured in `backend/.env`:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.rag.evaluate
+```
+
+The report includes page hit rate, mean reciprocal rank, required-term recall, and per-case sources. Optional thresholds make the command suitable for CI:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.rag.evaluate `
+  --top-k 5 `
+  --min-hit-rate 0.90 `
+  --min-term-recall 0.90
+```
+
+Run the evaluator once in `text` mode to record a baseline, then again in `hybrid` mode and compare the same cases.
 
 The current `http://storage.com/...` values are placeholders unless that host is controlled by your application. Replace them with URLs that return actual PDF bytes. Scanned image-only PDFs require OCR before this pipeline can index them.
 
@@ -396,7 +463,7 @@ The suite covers:
 - Model compatibility settings.
 - API request contracts.
 - MCP audit formatting.
-- MongoDB condition ingestion, filtering, and Haystack retrieval.
+- MongoDB condition ingestion, text/hybrid retrieval, fallback behavior, and grounded evaluation metrics.
 
 With the backend services running, execute the live smoke test:
 
@@ -459,7 +526,7 @@ Run `python -m backend.rag.pdf_ingestion` before starting the services. HTTP err
 - There is no authentication or customer database.
 - Chat history is supplied by the frontend rather than persisted by the backend.
 - The OpenAI integration currently uses Chat Completions rather than the Responses API.
-- Conditions retrieval currently uses MongoDB `$text` sparse search; semantic embeddings and vector search are not configured.
+- Hybrid retrieval requires a compatible MongoDB Vector Search index and incurs embedding API usage.
 - The original frontend is intentionally unchanged and still contains unused legacy `.NET` start scripts.
 
 ## Security notes

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "description": "Grounded retrieval cases for the fictional sample policy conditions.",
+  "cases": [
+    {
+      "id": "auto-collision-deductible",
+      "coverage_type": "auto",
+      "query": "How much do I have to pay myself after collision damage?",
+      "expected_policy": "SafeCar26.1",
+      "expected_pages": [2],
+      "required_terms": ["500", "deductible"]
+    },
+    {
+      "id": "auto-courtesy-car",
+      "coverage_type": "auto",
+      "query": "Can I get a courtesy car while mine is being repaired?",
+      "expected_policy": "SafeCar26.1",
+      "expected_pages": [3],
+      "required_terms": ["replacement", "10 consecutive days"]
+    },
+    {
+      "id": "auto-theft-security",
+      "coverage_type": "auto",
+      "query": "What security precautions are required when I leave the car unattended?",
+      "expected_policy": "SafeCar26.1",
+      "expected_pages": [2],
+      "required_terms": ["locked", "anti-theft"]
+    },
+    {
+      "id": "auto-personal-items",
+      "coverage_type": "auto",
+      "query": "Is my phone covered if it is stolen from the vehicle?",
+      "expected_policy": "SafeCar26.1",
+      "expected_pages": [4],
+      "required_terms": ["phones", "not covered"]
+    },
+    {
+      "id": "auto-glass-limit",
+      "coverage_type": "auto",
+      "query": "What is the annual windscreen limit and excess?",
+      "expected_policy": "SafeCar26.1",
+      "expected_pages": [3],
+      "required_terms": ["1,000", "100"]
+    },
+    {
+      "id": "home-water-pipe",
+      "coverage_type": "home",
+      "query": "Does the policy pay to find and access a leaking pipe?",
+      "expected_policy": "HomeSafe26.1",
+      "expected_pages": [2],
+      "required_terms": ["broken pipe", "3,000"]
+    },
+    {
+      "id": "home-courtesy-accommodation",
+      "coverage_type": "home",
+      "query": "Where can my family stay if the house cannot be lived in after a claim?",
+      "expected_policy": "HomeSafe26.1",
+      "expected_pages": [3],
+      "required_terms": ["alternative accommodation", "150 per day", "30 days"]
+    },
+    {
+      "id": "home-empty-house",
+      "coverage_type": "home",
+      "query": "What happens to cover if the property is empty for two months?",
+      "expected_policy": "HomeSafe26.1",
+      "expected_pages": [4],
+      "required_terms": ["unoccupied", "60 consecutive days"]
+    },
+    {
+      "id": "home-jewelry-limit",
+      "coverage_type": "home",
+      "query": "How much jewelry is insured after a break-in?",
+      "expected_policy": "HomeSafe26.1",
+      "expected_pages": [2],
+      "required_terms": ["Jewelry", "5,000"]
+    },
+    {
+      "id": "home-flood-exclusion",
+      "coverage_type": "home",
+      "query": "Am I protected against a river overflowing into my house?",
+      "expected_policy": "HomeSafe26.1",
+      "expected_pages": [4],
+      "required_terms": ["River flood", "excluded"]
+    },
+    {
+      "id": "life-time-off-work",
+      "coverage_type": "life",
+      "query": "What income do I receive if an accident stops me working temporarily?",
+      "expected_policy": "BeSafe26.1",
+      "expected_pages": [2],
+      "required_terms": ["50 per day", "day eight", "180 days"]
+    },
+    {
+      "id": "life-medical-bills",
+      "coverage_type": "life",
+      "query": "What is the maximum reimbursement for treatment after an accident?",
+      "expected_policy": "BeSafe26.1",
+      "expected_pages": [2],
+      "required_terms": ["15,000", "150 deductible"]
+    },
+    {
+      "id": "life-hospital-stay",
+      "coverage_type": "life",
+      "query": "Is there a daily payment when I have to stay overnight in hospital?",
+      "expected_policy": "BeSafe26.1",
+      "expected_pages": [3],
+      "required_terms": ["75", "90 nights"]
+    },
+    {
+      "id": "life-mountain-climbing",
+      "coverage_type": "life",
+      "query": "Does the insurance cover mountaineering at 4,500 metres?",
+      "expected_policy": "BeSafe26.1",
+      "expected_pages": [4],
+      "required_terms": ["climbing above 4,000 meters", "excluded"]
+    },
+    {
+      "id": "life-claim-deadline",
+      "coverage_type": "life",
+      "query": "How quickly should I notify the insurer about an accident?",
+      "expected_policy": "BeSafe26.1",
+      "expected_pages": [3],
+      "required_terms": ["ten days", "medical certificate"]
+    }
+  ]
+}

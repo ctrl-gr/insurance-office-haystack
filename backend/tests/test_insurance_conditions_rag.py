@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from backend.config import get_settings
-from backend.rag.pdf_ingestion import PolicyPdfIngestor
+from backend.rag.pdf_ingestion import PdfChunker, PolicyPdfIngestor
 from backend.rag.coverage_mapping import category_for_coverage
 from backend.rag.repository import MongoInsuranceConditionsRepository
 from backend.rag.service import InsuranceConditionsRag
@@ -17,8 +17,15 @@ class FakeConditionsRepository:
     def list_policies(self):
         return self.policies
 
-    def replace_policy_chunks(self, policy, pdf_hash, chunks):
-        self.replacements.append((policy, pdf_hash, chunks))
+    def replace_policy_chunks(
+        self,
+        policy,
+        pdf_hash,
+        chunks,
+        embedding_model=None,
+        ingestion_version=1,
+    ):
+        self.replacements.append((policy, pdf_hash, chunks, embedding_model, ingestion_version))
         return len(chunks)
 
     def search(self, query, category=None, policy_name=None, top_k=5):
@@ -42,6 +49,34 @@ class FakeChunker:
                 "source": f"{policy['name_conditions']}#page-7-chunk-0",
             }
         ]
+
+
+def test_pdf_chunker_preserves_original_pdf_page_numbers(monkeypatch):
+    class FakePage:
+        def __init__(self, text):
+            self.text = text
+
+        def extract_text(self):
+            return self.text
+
+    class FakeReader:
+        def __init__(self, _stream):
+            self.pages = [
+                FakePage("First page policy wording."),
+                FakePage("Second page policy exclusions."),
+            ]
+
+    monkeypatch.setattr("backend.rag.pdf_ingestion.PdfReader", FakeReader)
+    chunks = PdfChunker(100, 10).extract(
+        b"%PDF-fake",
+        {"name_conditions": "Policy26.1"},
+    )
+
+    assert [chunk["page_number"] for chunk in chunks] == [1, 2]
+    assert [chunk["source"] for chunk in chunks] == [
+        "Policy26.1#page-1-chunk-0",
+        "Policy26.1#page-2-chunk-1",
+    ]
 
 
 def test_coverage_types_map_to_shared_policy_categories():
@@ -91,6 +126,7 @@ def test_ingestion_skips_unchanged_pdf():
         "name_conditions": "SafeCar26.1",
         "storage_url": "https://storage.test/car.pdf",
         "indexed_pdf_hash": hashlib.sha256(pdf).hexdigest(),
+        "indexed_ingestion_version": 2,
     }
     repository = FakeConditionsRepository(policies=[policy])
 
@@ -98,6 +134,41 @@ def test_ingestion_skips_unchanged_pdf():
 
     assert summary.skipped == 1
     assert repository.replacements == []
+
+
+def test_ingestion_reembeds_unchanged_pdf_when_embedding_model_changes():
+    import hashlib
+
+    class FakeEmbedder:
+        model = "text-embedding-test"
+
+        def embed_chunks(self, chunks):
+            return [{**chunk, "embedding": [0.1, 0.2]} for chunk in chunks]
+
+    pdf = b"%PDF-car-v1"
+    policy = {
+        "policy_mongo_id": "6963abbfaec737a82f1efd0d",
+        "policy_id": 1,
+        "category": "Car",
+        "name_conditions": "SafeCar26.1",
+        "storage_url": "https://storage.test/car.pdf",
+        "indexed_pdf_hash": hashlib.sha256(pdf).hexdigest(),
+        "indexed_embedding_model": None,
+        "indexed_ingestion_version": 2,
+    }
+    repository = FakeConditionsRepository(policies=[policy])
+
+    summary = PolicyPdfIngestor(
+        repository,
+        FakeDownloader(),
+        FakeChunker(),
+        FakeEmbedder(),
+    ).run()
+
+    assert summary.indexed == 1
+    assert repository.replacements[0][2][0]["embedding"] == [0.1, 0.2]
+    assert repository.replacements[0][3] == "text-embedding-test"
+    assert repository.replacements[0][4] == 2
 
 
 def test_haystack_pipeline_returns_chunks_with_policy_and_page_citation():
@@ -118,7 +189,11 @@ def test_haystack_pipeline_returns_chunks_with_policy_and_page_citation():
             }
         ]
     )
-    settings = replace(get_settings(), conditions_auto_ingest=False)
+    settings = replace(
+        get_settings(),
+        conditions_auto_ingest=False,
+        rag_retrieval_mode="text",
+    )
     rag = InsuranceConditionsRag(settings, repository=repository)
 
     matches = rag.search("is theft covered?", category="Car", policy_name="SafeCar26.1", top_k=3)

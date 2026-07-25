@@ -28,6 +28,14 @@ def _boolean(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _choice(name: str, default: str, allowed: set[str]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    if value not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise ValueError(f"{name} must be one of: {choices}")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     openai_api_key: str
@@ -44,8 +52,14 @@ class Settings:
     mongodb_database: str
     mongodb_policies_collection: str
     mongodb_chunks_collection: str
+    mongodb_vector_index: str
     mongodb_server_selection_timeout_ms: int
     conditions_auto_ingest: bool
+    rag_retrieval_mode: str
+    rag_embedding_model: str
+    rag_embedding_dimensions: int
+    rag_vector_candidates: int
+    rag_hybrid_rrf_k: int
     rag_chunk_size_words: int
     rag_chunk_overlap_words: int
     pdf_download_timeout_seconds: float
@@ -109,8 +123,17 @@ def get_settings() -> Settings:
         mongodb_database=os.getenv("MONGODB_DATABASE", "insurance_office"),
         mongodb_policies_collection=os.getenv("MONGODB_POLICIES_COLLECTION", "policy_conditions"),
         mongodb_chunks_collection=os.getenv("MONGODB_CHUNKS_COLLECTION", "insurance_condition_chunks"),
+        mongodb_vector_index=os.getenv(
+            "MONGODB_VECTOR_INDEX",
+            "condition_chunk_vector_index",
+        ).strip(),
         mongodb_server_selection_timeout_ms=int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", "5000")),
         conditions_auto_ingest=_boolean("CONDITIONS_AUTO_INGEST"),
+        rag_retrieval_mode=_choice("RAG_RETRIEVAL_MODE", "text", {"text", "hybrid"}),
+        rag_embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small").strip(),
+        rag_embedding_dimensions=int(os.getenv("RAG_EMBEDDING_DIMENSIONS", "1536")),
+        rag_vector_candidates=int(os.getenv("RAG_VECTOR_CANDIDATES", "50")),
+        rag_hybrid_rrf_k=int(os.getenv("RAG_HYBRID_RRF_K", "60")),
         rag_chunk_size_words=int(os.getenv("RAG_CHUNK_SIZE_WORDS", "500")),
         rag_chunk_overlap_words=int(os.getenv("RAG_CHUNK_OVERLAP_WORDS", "75")),
         pdf_download_timeout_seconds=float(os.getenv("PDF_DOWNLOAD_TIMEOUT_SECONDS", "30")),
