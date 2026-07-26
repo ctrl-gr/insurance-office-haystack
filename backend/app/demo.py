@@ -88,19 +88,27 @@ def _format_guarantee(guarantee: dict) -> str:
     return f"{guarantee['name']}{limit_text}{terms_text}"
 
 
-async def demo_reply(message: str, history: list[dict[str, str]]) -> str:
+async def demo_reply(
+    message: str,
+    history: list[dict[str, str]],
+    session_id: str,
+) -> str:
     kind, age, asset = extract_quote_request(message, history)
     intent = detect_intent(message)
     if intent == "purchase":
         provider_id = _provider_from_conversation(message, history)
-        quote_result = await compare_quotes(age, kind, asset) if kind and age and asset else None
+        quote_result = (
+            await compare_quotes(age, kind, asset, session_id)
+            if kind and age and asset
+            else None
+        )
         if provider_id is None:
             return "Which quote would you like to purchase: Lion, Blue, or Three Lines?"
         premium = next((q["annualPremium"] for q in quote_result["quotes"] if q["providerId"] == provider_id), None) if quote_result else None
         premium = premium or _premium_from_history(provider_id, history)
         if premium is None:
             return "I need a completed quote before purchasing. Tell me the insurance type, age, and insured value."
-        receipt = await purchase_policy(provider_id, premium)
+        receipt = await purchase_policy(provider_id, premium, session_id)
         return f"Purchase confirmed with {receipt['companyName']}. Reference: {receipt['reference']}. Annual premium: EUR {receipt['amount']:,.2f}."
     if intent == "coverage":
         if not kind:
@@ -113,7 +121,7 @@ async def demo_reply(message: str, history: list[dict[str, str]]) -> str:
             rows.append(f"{item['companyName']} - Included: {', '.join(included)}. Excluded: {', '.join(excluded) or 'none listed'}.")
         return "\n\n".join(rows)
     if kind and age and asset:
-        result = await compare_quotes(age, kind, asset)
+        result = await compare_quotes(age, kind, asset, session_id)
         rows = [f"{q['rank']}. {q['companyName']}: EUR {q['annualPremium']:,.2f}/year" for q in result["quotes"]]
         return "Illustrative comparison:\n\n" + "\n".join(rows)
     if intent == "unknown" and not kind:

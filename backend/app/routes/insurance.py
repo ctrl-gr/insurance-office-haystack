@@ -11,7 +11,12 @@ router = APIRouter(prefix="/api")
 @router.post("/quotes")
 async def quotes(request: QuoteRequest) -> dict:
     try:
-        return await compare_quotes(request.age, request.coverageType, request.assetValue)
+        return await compare_quotes(
+            request.age,
+            request.coverageType,
+            request.assetValue,
+            request.sessionId,
+        )
     except Exception as error:
         raise UpstreamServiceError("The insurance MCP proxy is unavailable.") from error
 
@@ -29,6 +34,11 @@ async def coverage(coverage_type: CoverageType, provider_id: str | None = None) 
 @router.post("/purchase")
 async def purchase(request: PurchaseRequest) -> dict:
     try:
-        return await purchase_policy(request.providerId, request.annualPremium, request.quoteId)
+        return await purchase_policy(
+            request.providerId,
+            request.annualPremium,
+            request.sessionId,
+            request.quoteId,
+        )
     except Exception as error:
         raise UpstreamServiceError("The selected quote could not be purchased.") from error

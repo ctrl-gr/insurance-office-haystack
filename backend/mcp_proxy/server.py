@@ -103,21 +103,36 @@ async def search_insurance_conditions(
 
 
 @proxy.tool(name="thelion_get_quote")
-async def lion_get_quote(client_age: int, coverage_type: CoverageType, asset_value: float) -> dict:
+async def lion_get_quote(
+    client_age: int,
+    coverage_type: CoverageType,
+    asset_value: float,
+    session_id: str,
+) -> dict:
     """Get a Lion quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thelion", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value})
+    return await _route("thelion", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
 
 
 @proxy.tool(name="thebluecompany_get_quote")
-async def blue_get_quote(client_age: int, coverage_type: CoverageType, asset_value: float) -> dict:
+async def blue_get_quote(
+    client_age: int,
+    coverage_type: CoverageType,
+    asset_value: float,
+    session_id: str,
+) -> dict:
     """Get a Blue quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thebluecompany", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value})
+    return await _route("thebluecompany", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
 
 
 @proxy.tool(name="thethreelines_get_quote")
-async def three_lines_get_quote(client_age: int, coverage_type: CoverageType, asset_value: float) -> dict:
+async def three_lines_get_quote(
+    client_age: int,
+    coverage_type: CoverageType,
+    asset_value: float,
+    session_id: str,
+) -> dict:
     """Get a Three Lines quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thethreelines", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value})
+    return await _route("thethreelines", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
 
 
 @proxy.tool(name="thelion_check_coverage")
@@ -139,23 +154,35 @@ async def three_lines_check_coverage(coverage_type: CoverageType) -> dict:
 
 
 @proxy.tool(name="thelion_purchase_policy")
-async def lion_purchase_policy(annual_premium: float, quote_id: str | None = None) -> dict:
+async def lion_purchase_policy(
+    annual_premium: float,
+    session_id: str,
+    quote_id: str | None = None,
+) -> dict:
     """Purchase a previously issued Lion quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, **({"quote_id": quote_id} if quote_id else {})}
+    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
     return await _route("thelion", "purchase_policy", arguments)
 
 
 @proxy.tool(name="thebluecompany_purchase_policy")
-async def blue_purchase_policy(annual_premium: float, quote_id: str | None = None) -> dict:
+async def blue_purchase_policy(
+    annual_premium: float,
+    session_id: str,
+    quote_id: str | None = None,
+) -> dict:
     """Purchase a previously issued Blue quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, **({"quote_id": quote_id} if quote_id else {})}
+    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
     return await _route("thebluecompany", "purchase_policy", arguments)
 
 
 @proxy.tool(name="thethreelines_purchase_policy")
-async def three_lines_purchase_policy(annual_premium: float, quote_id: str | None = None) -> dict:
+async def three_lines_purchase_policy(
+    annual_premium: float,
+    session_id: str,
+    quote_id: str | None = None,
+) -> dict:
     """Purchase a previously issued Three Lines quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, **({"quote_id": quote_id} if quote_id else {})}
+    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
     return await _route("thethreelines", "purchase_policy", arguments)
 
 

@@ -1,10 +1,15 @@
 import json
 
 from haystack.dataclasses import ChatMessage, ToolCall
+from haystack.tools import Tool, Toolset
 
 import backend.config as config
 from backend.agent import build_messages
-from backend.agent.service import extract_citations
+from backend.agent.service import (
+    SESSION_SCOPED_TOOLS,
+    extract_citations,
+    hide_session_state_from_model,
+)
 from backend.config import get_settings
 
 
@@ -51,6 +56,44 @@ def test_extract_citations_uses_condition_tool_results_and_deduplicates_sources(
             "source": "SafeCar26.1#page-2-chunk-1",
         }
     ]
+
+
+def test_quote_and_purchase_tools_receive_session_from_agent_state():
+    assert set(SESSION_SCOPED_TOOLS) == {
+        "thelion_get_quote",
+        "thelion_purchase_policy",
+        "thebluecompany_get_quote",
+        "thebluecompany_purchase_policy",
+        "thethreelines_get_quote",
+        "thethreelines_purchase_policy",
+    }
+    assert all(
+        mapping == {"session_id": "session_id"}
+        for mapping in SESSION_SCOPED_TOOLS.values()
+    )
+
+
+def test_session_state_is_hidden_from_the_model_tool_schema():
+    tool = Tool(
+        name="thelion_get_quote",
+        description="quote",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "client_age": {"type": "integer"},
+            },
+            "required": ["session_id", "client_age"],
+        },
+        function=lambda **kwargs: kwargs,
+        inputs_from_state={"session_id": "session_id"},
+    )
+    toolset = Toolset([tool])
+
+    hide_session_state_from_model(toolset)
+
+    assert "session_id" not in tool.parameters["properties"]
+    assert tool.parameters["required"] == ["client_age"]
 
 
 def test_chat_is_unconfigured_without_key_or_explicit_demo(monkeypatch, tmp_path):

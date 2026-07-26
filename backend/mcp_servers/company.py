@@ -10,7 +10,7 @@ import uuid
 from mcp.server.fastmcp import FastMCP
 
 from backend.config import get_settings
-from backend.domain import QuoteLedger
+from backend.domain import MongoQuoteLedger
 from backend.mcp_audit import audit, get_audit_logger
 from .coverage import PolicyCoverage
 
@@ -85,7 +85,10 @@ def purchase_for(spec: CompanySpec, annual_premium: float) -> dict:
         raise ValueError("Annual premium must be greater than 0")
     return {
         "status": "confirmed",
-        "reference": f"MCP-{spec.company_id.upper().replace('-', '')}-{int(amount * 100):08d}",
+        "reference": (
+            f"MCP-{spec.company_id.upper().replace('-', '')}-"
+            f"{uuid.uuid4().hex[:12].upper()}"
+        ),
         "providerId": spec.company_id,
         "companyName": spec.company_name,
         "amount": float(amount),
@@ -95,7 +98,7 @@ def purchase_for(spec: CompanySpec, annual_premium: float) -> dict:
 def create_company_server(spec: CompanySpec) -> FastMCP:
     server = FastMCP(spec.company_name, instructions=f"Insurance tools for {spec.company_name}.", host="127.0.0.1", port=spec.port, stateless_http=True, json_response=True)
     logger = get_audit_logger(spec.company_id)
-    quote_ledger = QuoteLedger(spec.company_id, get_settings().quote_ttl_seconds)
+    quote_ledger = MongoQuoteLedger(spec.company_id, get_settings())
 
     def execute(tool_name: str, request_id: str | None, operation) -> dict:
         trace_id = request_id or str(uuid.uuid4())
@@ -138,12 +141,21 @@ def create_company_server(spec: CompanySpec) -> FastMCP:
             raise
 
     @server.tool(name="get_quote")
-    def get_quote(client_age: int, coverage_type: CoverageType, asset_value: float, request_id: str | None = None) -> dict:
+    def get_quote(
+        client_age: int,
+        coverage_type: CoverageType,
+        asset_value: float,
+        session_id: str,
+        request_id: str | None = None,
+    ) -> dict:
         """Get an illustrative insurance quote from this company."""
         return execute(
             "get_quote",
             request_id,
-            lambda: quote_ledger.issue(calculate_quote(spec, client_age, coverage_type, asset_value)),
+            lambda: quote_ledger.issue(
+                calculate_quote(spec, client_age, coverage_type, asset_value),
+                session_id,
+            ),
         )
 
     @server.tool(name="check_coverage")
@@ -152,11 +164,20 @@ def create_company_server(spec: CompanySpec) -> FastMCP:
         return execute("check_coverage", request_id, lambda: coverage_for(spec, coverage_type))
 
     @server.tool(name="purchase_policy")
-    def purchase_policy(annual_premium: float, quote_id: str | None = None, request_id: str | None = None) -> dict:
+    def purchase_policy(
+        annual_premium: float,
+        session_id: str,
+        quote_id: str | None = None,
+        request_id: str | None = None,
+    ) -> dict:
         """Purchase a previously issued active quote. quote_id is preferred when available."""
         def purchase_issued_quote() -> dict:
-            issued = quote_ledger.consume(annual_premium, quote_id)
-            return {**purchase_for(spec, annual_premium), "quoteId": issued.quote_id}
+            issued = quote_ledger.consume(annual_premium, session_id, quote_id)
+            purchase = {
+                **purchase_for(spec, annual_premium),
+                "quoteId": issued.quote_id,
+            }
+            return quote_ledger.record_purchase(issued, purchase)
 
         return execute("purchase_policy", request_id, purchase_issued_quote)
 

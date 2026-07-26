@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import Header from "./components/Header";
 import CompaniesBar from "./components/CompaniesBar";
@@ -7,24 +7,86 @@ import MessagesList from "./components/MessagesList";
 import InputArea from "./components/InputArea";
 import type { Message } from "./types";
 
-const API_BASE = "http://localhost:5100";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5100";
+const SESSION_STORAGE_KEY = "insurance-office.session-id";
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const initializedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const createSession = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/sessions`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const session = await response.json();
+    localStorage.setItem(SESSION_STORAGE_KEY, session.sessionId);
+    setSessionId(session.sessionId);
+    setMessages([]);
+    return session.sessionId as string;
+  }, []);
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const restoreSession = async () => {
+      try {
+        const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+        if (!storedSessionId) {
+          await createSession();
+          return;
+        }
+        const response = await fetch(
+          `${API_BASE}/api/sessions/${storedSessionId}/messages`,
+        );
+        if (response.status === 404) {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+          await createSession();
+          return;
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        setSessionId(storedSessionId);
+        setMessages(
+          payload.messages.map((message: Message) => ({
+            role: message.role,
+            content: message.content,
+            citations: message.citations ?? [],
+          })),
+        );
+      } catch {
+        setMessages([
+          {
+            role: "assistant",
+            content:
+              "Connection error. Make sure the backend and MongoDB are available.",
+          },
+        ]);
+      } finally {
+        setInitializing(false);
+      }
+    };
+
+    void restoreSession();
+  }, [createSession]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   const adjustTextarea = () => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 160) + "px";
   };
 
   useEffect(() => {
@@ -32,44 +94,44 @@ export default function App() {
   }, [input]);
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || loading) return;
+    if (!text.trim() || loading || initializing || !sessionId) return;
 
-    const userMsg: Message = { role: "user", content: text.trim() };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    const userMessage: Message = { role: "user", content: text.trim() };
+    setMessages((previous) => [...previous, userMessage]);
     setInput("");
     setLoading(true);
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text.trim(),
-          history: messages.map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
+      const response = await fetch(
+        `${API_BASE}/api/sessions/${sessionId}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text.trim() }),
+        },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
+      const payload = await response.json();
+      setMessages((previous) => [
+        ...previous,
         {
           role: "assistant",
-          content: data.reply,
-          citations: Array.isArray(data.citations) ? data.citations : [],
+          content: payload.reply,
+          citations: Array.isArray(payload.citations)
+            ? payload.citations
+            : [],
         },
       ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
+    } catch {
+      setMessages((previous) => [
+        ...previous,
         {
           role: "assistant",
           content:
-            "⚠ Connection error. Make sure InsuranceOfficeApi and the Proxy are running.",
+            "Connection error. Make sure the backend, proxy, and MongoDB are running.",
         },
       ]);
     } finally {
@@ -77,14 +139,16 @@ export default function App() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage(input);
     }
   };
 
-  const onPickSuggestion = (s: string) => sendMessage(s);
+  const isBusy = loading || initializing;
 
   return (
     <div className="app">
@@ -97,23 +161,23 @@ export default function App() {
         ]}
       />
 
-      {messages.length === 0 && !loading ? (
-        <WelcomeView onPick={onPickSuggestion} />
+      {messages.length === 0 && !isBusy ? (
+        <WelcomeView onPick={(suggestion) => void sendMessage(suggestion)} />
       ) : (
         <>
-          <MessagesList messages={messages} loading={loading} />
+          <MessagesList messages={messages} loading={isBusy} />
           <div ref={messagesEndRef} />
         </>
       )}
 
       <InputArea
         input={input}
-        setInput={(v) => {
-          setInput(v);
+        setInput={(value) => {
+          setInput(value);
           adjustTextarea();
         }}
         sendMessage={sendMessage}
-        loading={loading}
+        loading={isBusy}
         textareaRef={textareaRef}
         handleKeyDown={handleKeyDown}
       />

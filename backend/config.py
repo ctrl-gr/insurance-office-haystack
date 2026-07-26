@@ -52,6 +52,10 @@ class Settings:
     mongodb_database: str
     mongodb_policies_collection: str
     mongodb_chunks_collection: str
+    mongodb_sessions_collection: str
+    mongodb_messages_collection: str
+    mongodb_quotes_collection: str
+    mongodb_purchases_collection: str
     mongodb_vector_index: str
     mongodb_server_selection_timeout_ms: int
     conditions_auto_ingest: bool
@@ -123,6 +127,10 @@ def get_settings() -> Settings:
         mongodb_database=os.getenv("MONGODB_DATABASE", "insurance_office"),
         mongodb_policies_collection=os.getenv("MONGODB_POLICIES_COLLECTION", "policy_conditions"),
         mongodb_chunks_collection=os.getenv("MONGODB_CHUNKS_COLLECTION", "insurance_condition_chunks"),
+        mongodb_sessions_collection=os.getenv("MONGODB_SESSIONS_COLLECTION", "chat_sessions"),
+        mongodb_messages_collection=os.getenv("MONGODB_MESSAGES_COLLECTION", "chat_messages"),
+        mongodb_quotes_collection=os.getenv("MONGODB_QUOTES_COLLECTION", "insurance_quotes"),
+        mongodb_purchases_collection=os.getenv("MONGODB_PURCHASES_COLLECTION", "policy_purchases"),
         mongodb_vector_index=os.getenv(
             "MONGODB_VECTOR_INDEX",
             "condition_chunk_vector_index",

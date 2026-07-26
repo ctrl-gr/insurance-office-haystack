@@ -10,6 +10,7 @@ from decimal import Decimal
 @dataclass
 class IssuedQuote:
     quote_id: str
+    session_id: str
     provider_id: str
     annual_premium: Decimal
     expires_at: datetime
@@ -25,10 +26,11 @@ class QuoteLedger:
         self._quotes: dict[str, IssuedQuote] = {}
         self._lock = threading.Lock()
 
-    def issue(self, quote: dict) -> dict:
+    def issue(self, quote: dict, session_id: str) -> dict:
         now = datetime.now(timezone.utc)
         issued = IssuedQuote(
             quote_id=f"Q-{self.provider_id.upper().replace('-', '')}-{uuid.uuid4().hex[:12].upper()}",
+            session_id=session_id,
             provider_id=self.provider_id,
             annual_premium=Decimal(str(quote["annualPremium"])),
             expires_at=now + self.ttl,
@@ -38,19 +40,27 @@ class QuoteLedger:
             self._quotes[issued.quote_id] = issued
         return {**quote, "quoteId": issued.quote_id, "expiresAt": issued.expires_at.isoformat()}
 
-    def consume(self, annual_premium: float, quote_id: str | None = None) -> IssuedQuote:
+    def consume(
+        self,
+        annual_premium: float,
+        session_id: str,
+        quote_id: str | None = None,
+    ) -> IssuedQuote:
         now = datetime.now(timezone.utc)
         amount = Decimal(str(annual_premium))
         with self._lock:
             self._purge(now)
             if quote_id:
-                issued = self._quotes.get(quote_id)
+                candidate = self._quotes.get(quote_id)
+                issued = candidate if candidate and candidate.session_id == session_id else None
             else:
                 issued = next(
                     (
                         candidate
                         for candidate in reversed(tuple(self._quotes.values()))
-                        if not candidate.consumed and candidate.annual_premium == amount
+                        if not candidate.consumed
+                        and candidate.session_id == session_id
+                        and candidate.annual_premium == amount
                     ),
                     None,
                 )

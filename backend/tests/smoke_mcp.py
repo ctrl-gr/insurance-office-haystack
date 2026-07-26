@@ -8,6 +8,7 @@ from backend.mcp_proxy.client import call_proxy_tool
 
 
 async def main() -> None:
+    mcp_session_id = "S-" + "A" * 32
     discovered = await call_proxy_tool("list_company_tools", {})
     assert len(discovered["tools"]) == 10
 
@@ -21,22 +22,40 @@ async def main() -> None:
 
     lion_quote = await call_proxy_tool(
         "thelion_get_quote",
-        {"client_age": 35, "coverage_type": "auto", "asset_value": 25_000},
+        {
+            "client_age": 35,
+            "coverage_type": "auto",
+            "asset_value": 25_000,
+            "session_id": mcp_session_id,
+        },
     )
     assert lion_quote["annualPremium"] == 1125.0
     assert lion_quote["quoteId"].startswith("Q-LION-")
 
     purchase = await call_proxy_tool(
         "thelion_purchase_policy",
-        {"annual_premium": lion_quote["annualPremium"], "quote_id": lion_quote["quoteId"]},
+        {
+            "annual_premium": lion_quote["annualPremium"],
+            "quote_id": lion_quote["quoteId"],
+            "session_id": mcp_session_id,
+        },
     )
     assert purchase["status"] == "confirmed"
     assert purchase["quoteId"] == lion_quote["quoteId"]
 
     async with httpx.AsyncClient(timeout=60) as client:
+        session_response = await client.post(
+            "http://127.0.0.1:5100/api/sessions"
+        )
+        session_response.raise_for_status()
+        chat_session_id = session_response.json()["sessionId"]
         response = await client.post(
-            "http://127.0.0.1:5100/api/chat",
-            json={"message": "Compare auto insurance for a 35 year old and a 25000 car", "history": []},
+            f"http://127.0.0.1:5100/api/sessions/{chat_session_id}/messages",
+            json={
+                "message": (
+                    "Compare auto insurance for a 35 year old and a 25000 car"
+                )
+            },
         )
         response.raise_for_status()
         payload = response.json()
@@ -45,10 +64,9 @@ async def main() -> None:
         assert "The Three Lines Insurance" in payload["reply"]
 
         rag_response = await client.post(
-            "http://127.0.0.1:5100/api/chat",
+            f"http://127.0.0.1:5100/api/sessions/{chat_session_id}/messages",
             json={
                 "message": "According to the shared auto conditions, how long is a replacement car provided? Cite the source.",
-                "history": [],
             },
         )
         rag_response.raise_for_status()

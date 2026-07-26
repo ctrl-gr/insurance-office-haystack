@@ -8,7 +8,7 @@ from backend.config import get_settings
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    application = FastAPI(title="Haystack Insurance Office", version="4.0.0")
+    application = FastAPI(title="Haystack Insurance Office", version="5.0.0")
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),

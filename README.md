@@ -209,6 +209,10 @@ Configuration is read from `backend/.env` by every backend process.
 | `MONGODB_DATABASE` | `insurance_office` | Database containing the conditions collection. |
 | `MONGODB_POLICIES_COLLECTION` | `policy_conditions` | Authoritative policy metadata and PDF URLs. |
 | `MONGODB_CHUNKS_COLLECTION` | `insurance_condition_chunks` | Derived, searchable PDF chunks. |
+| `MONGODB_SESSIONS_COLLECTION` | `chat_sessions` | Conversation session metadata and sequence counters. |
+| `MONGODB_MESSAGES_COLLECTION` | `chat_messages` | Ordered user and assistant messages with citations. |
+| `MONGODB_QUOTES_COLLECTION` | `insurance_quotes` | Durable session-bound provider quotes. |
+| `MONGODB_PURCHASES_COLLECTION` | `policy_purchases` | Confirmed purchases linked to their issued quote. |
 | `MONGODB_VECTOR_INDEX` | `condition_chunk_vector_index` | Atlas Vector Search index used by hybrid retrieval. |
 | `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | `5000` | Fail-fast MongoDB connection timeout. |
 | `CONDITIONS_AUTO_INGEST` | `false` | Download and re-index changed PDFs when the RAG MCP starts. |
@@ -246,7 +250,7 @@ The system prompt separates conversation from provider operations:
 - Tool responses are summarized into natural language.
 - Prices and provider-specific facts are never invented.
 
-The frontend sends the last visible user and assistant messages with every request. It does not currently persist conversations in a database.
+The frontend stores only an opaque `sessionId` in browser local storage. FastAPI loads the last server-managed messages from MongoDB before each Haystack run, then stores the new user message, assistant reply, and structured citations. Reloading the page or restarting the backend preserves the conversation.
 
 ## Insurance conditions RAG
 
@@ -347,14 +351,17 @@ Every company quote includes:
 - Coverage type
 - Structured included guarantees
 
-Each company maintains its own process-local issued-quote ledger. A purchase succeeds only when:
+All three company MCP processes share a MongoDB issued-quote ledger. Every quote is bound to the opaque conversation session that requested it. A purchase succeeds only when:
 
 - The company previously issued a matching quote.
 - The quote has not expired.
 - The annual premium has not been changed.
 - The quote has not already been purchased.
+- The purchasing session is the session that requested the quote.
 
-The ledger is intentionally in memory for this demo. Restarting a company server clears its issued quotes. A production implementation should store quotes and purchases in a persistent database and associate them with an authenticated customer.
+Quotes survive company-server and API restarts. Confirmed purchases are written to `policy_purchases`, while an atomic quote status update prevents a second purchase. Session binding provides isolation for the demo, but it is not a replacement for authenticated customer ownership.
+
+The API and company services create their required MongoDB indexes idempotently on startup. The configured database user therefore needs permission to create indexes and read/write these four collections.
 
 ## HTTP API
 
@@ -362,7 +369,11 @@ The ledger is intentionally in memory for this demo. Restarting a company server
 | --- | --- | --- |
 | `GET` | `/api/health` | Check API, proxy, tool count, and chat mode. |
 | `GET` | `/api/providers` | List configured providers. |
-| `POST` | `/api/chat` | Send a conversational message and history. |
+| `POST` | `/api/sessions` | Create a persistent conversation. |
+| `GET` | `/api/sessions/{id}/messages` | Resume a conversation from MongoDB. |
+| `POST` | `/api/sessions/{id}/messages` | Send a message using server-managed history. |
+| `DELETE` | `/api/sessions/{id}` | Delete a session and its messages. |
+| `POST` | `/api/chat` | Legacy non-persistent compatibility endpoint. |
 | `POST` | `/api/quotes` | Compare all provider quotes. |
 | `GET` | `/api/coverage/{type}` | Inspect auto, home, or life coverage. |
 | `POST` | `/api/purchase` | Purchase an active issued quote. |
@@ -388,10 +399,15 @@ A correctly configured result reports:
 ### Quote comparison
 
 ```powershell
+$session = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:5100/api/sessions
+
 $body = @{
   age = 35
   coverageType = "auto"
   assetValue = 25000
+  sessionId = $session.sessionId
 } | ConvertTo-Json
 
 $quotes = Invoke-RestMethod `
@@ -418,6 +434,7 @@ $body = @{
   providerId = $selected.providerId
   annualPremium = $selected.annualPremium
   quoteId = $selected.quoteId
+  sessionId = $session.sessionId
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -459,7 +476,8 @@ The suite covers:
 - Provider pricing and age adjustments.
 - Structured coverage catalogs.
 - Quote and purchase validation.
-- Conversation history construction.
+- Server-managed conversation persistence and restoration.
+- Quote restart recovery and cross-session isolation.
 - Model compatibility settings.
 - API request contracts.
 - MCP audit formatting.
@@ -522,9 +540,8 @@ Run `python -m backend.rag.pdf_ingestion` before starting the services. HTTP err
 ## Current limitations
 
 - Provider data and purchases are illustrative.
-- Quotes and purchases are stored only in memory.
 - There is no authentication or customer database.
-- Chat history is supplied by the frontend rather than persisted by the backend.
+- Opaque session IDs isolate browser conversations but are bearer identifiers, not authenticated identities.
 - The OpenAI integration currently uses Chat Completions rather than the Responses API.
 - Hybrid retrieval requires a compatible MongoDB Vector Search index and incurs embedding API usage.
 - The original frontend is intentionally unchanged and still contains unused legacy `.NET` start scripts.
@@ -535,7 +552,7 @@ Run `python -m backend.rag.pdf_ingestion` before starting the services. HTTP err
 - Treat `MONGODB_URI` as a secret when it contains credentials.
 - Never log or return the OpenAI API key.
 - MCP audit records intentionally exclude business payload values.
-- Add authentication, authorization, persistent storage, and durable audit retention before treating this architecture as production-ready.
+- Add authentication, authorization, rate limiting, and durable audit retention before treating this architecture as production-ready.
 
 ## License
 
