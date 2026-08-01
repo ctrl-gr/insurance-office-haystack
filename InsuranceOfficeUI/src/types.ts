@@ -11,6 +11,15 @@ export interface Message {
   citations?: Citation[];
 }
 
+export interface Conversation {
+  sessionId: string;
+  status: "active";
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const SUGGESTIONS = [
   "→ How much to insure with a full coverage a €25,000 car for a 35 year-old who lives in Rome which has the lowest insurance merit class?",
   "→ Compare life insurance across the 3 companies",

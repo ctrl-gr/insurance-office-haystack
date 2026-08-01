@@ -70,6 +70,15 @@ class FakeConversationRepository:
             "updatedAt": "2026-01-01T00:00:00+00:00",
         }
 
+    def list_sessions(self, limit=50):
+        return [
+            {
+                **self.create_session(),
+                "title": "Compare home insurance",
+                "messageCount": 2,
+            }
+        ][:limit]
+
     def list_messages(self, session_id, limit=100):
         return self.messages[-limit:]
 
@@ -139,3 +148,17 @@ def test_existing_session_messages_can_be_resumed(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["messages"][0]["content"] == "Welcome back"
+
+
+def test_sessions_are_listed_for_conversation_history(monkeypatch):
+    repository = FakeConversationRepository()
+    monkeypatch.setattr(
+        chat_routes,
+        "get_conversation_repository",
+        lambda: repository,
+    )
+
+    response = asyncio.run(request("GET", "/api/sessions?limit=20"))
+
+    assert response.status_code == 200
+    assert response.json()["sessions"][0]["title"] == "Compare home insurance"

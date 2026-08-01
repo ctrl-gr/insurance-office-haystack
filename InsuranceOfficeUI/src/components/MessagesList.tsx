@@ -1,4 +1,4 @@
-import React from "react";
+import React, { type RefObject } from "react";
 import type { Citation, Message } from "../types";
 
 const renderSafeText = (content: string) =>
@@ -38,7 +38,11 @@ const CitationLink: React.FC<{ citation: Citation }> = ({ citation }) => {
   );
 };
 
-const MessagesList: React.FC<{ messages: Message[]; loading: boolean }> = ({ messages, loading }) => (
+const MessagesList: React.FC<{
+  messages: Message[];
+  loading: boolean;
+  endRef: RefObject<HTMLDivElement | null>;
+}> = ({ messages, loading, endRef }) => (
   <div className="messages">
     {messages.map((msg, i) => (
       <div key={i} className={`message ${msg.role}`}>
@@ -68,6 +72,7 @@ const MessagesList: React.FC<{ messages: Message[]; loading: boolean }> = ({ mes
         </div>
       </div>
     )}
+    <div ref={endRef} />
   </div>
 );
 

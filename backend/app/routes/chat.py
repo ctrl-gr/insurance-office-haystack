@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from functools import lru_cache
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from backend.agent import run_agent_response
 from backend.app.demo import demo_reply
@@ -97,6 +97,17 @@ async def create_session() -> dict:
         get_conversation_repository().create_session
     )
     return {**session, "messages": []}
+
+
+@router.get("/sessions")
+async def list_sessions(
+    limit: int = Query(default=50, ge=1, le=100),
+) -> dict:
+    sessions = await asyncio.to_thread(
+        get_conversation_repository().list_sessions,
+        limit,
+    )
+    return {"sessions": sessions}
 
 
 @router.get("/sessions/{session_id}/messages")

@@ -47,6 +47,7 @@ class MongoConversationRepository:
         document = {
             "_id": session_id,
             "status": "active",
+            "title": "New conversation",
             "created_at": now,
             "updated_at": now,
             "next_sequence": 0,
@@ -59,6 +60,14 @@ class MongoConversationRepository:
         if document is None:
             raise ConversationNotFoundError("Conversation session was not found")
         return self._serialize_session(document)
+
+    def list_sessions(self, limit: int = 50) -> list[dict]:
+        cursor = (
+            self.sessions.find({"status": "active"})
+            .sort("updated_at", DESCENDING)
+            .limit(limit)
+        )
+        return [self._serialize_session(document) for document in cursor]
 
     def append_message(
         self,
@@ -86,6 +95,21 @@ class MongoConversationRepository:
             "created_at": now,
         }
         result = self.messages.insert_one(document)
+        if (
+            role == "user"
+            and session.get("title", "New conversation") == "New conversation"
+        ):
+            title = " ".join(content.split())[:72] or "New conversation"
+            self.sessions.update_one(
+                {
+                    "_id": session_id,
+                    "$or": [
+                        {"title": "New conversation"},
+                        {"title": {"$exists": False}},
+                    ],
+                },
+                {"$set": {"title": title}},
+            )
         return self._serialize_message({**document, "_id": result.inserted_id})
 
     def list_messages(self, session_id: str, limit: int = 100) -> list[dict]:
@@ -108,6 +132,8 @@ class MongoConversationRepository:
         return {
             "sessionId": document["_id"],
             "status": document["status"],
+            "title": document.get("title", "Conversation"),
+            "messageCount": document.get("next_sequence", 0),
             "createdAt": document["created_at"].isoformat(),
             "updatedAt": document["updated_at"].isoformat(),
         }
