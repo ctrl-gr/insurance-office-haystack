@@ -13,8 +13,20 @@ from backend.mcp_servers.company import CoverageType
 from .client import call_mcp_tool
 
 
-PROVIDER_URLS = get_settings().company_urls
-SERVICE_URLS = get_settings().mcp_service_urls
+SETTINGS = get_settings()
+SERVICE_URLS = SETTINGS.mcp_service_urls
+COMPANY_IDS = tuple(SETTINGS.company_urls)
+COMPANY_NAMES = {
+    "thelion": "Lion",
+    "thebluecompany": "Blue",
+    "thethreelines": "Three Lines",
+}
+COMPANY_OPERATIONS = ("get_quote", "check_coverage", "purchase_policy")
+COMPANY_TOOL_NAMES = tuple(
+    f"{company_id}_{operation}"
+    for company_id in COMPANY_IDS
+    for operation in COMPANY_OPERATIONS
+)
 AUDIT_LOGGER = get_audit_logger("proxy")
 
 proxy = MCPServer(
@@ -76,13 +88,7 @@ async def _route(service_id: str, tool_name: str, arguments: dict, exposed_tool_
 @proxy.tool()
 def list_company_tools() -> dict:
     """List every insurance company tool and the insurance-conditions RAG tool."""
-    return {
-        "tools": [
-            f"{company}_{tool}"
-            for company in PROVIDER_URLS
-            for tool in ("get_quote", "check_coverage", "purchase_policy")
-        ] + ["search_insurance_conditions"]
-    }
+    return {"tools": [*COMPANY_TOOL_NAMES, "search_insurance_conditions"]}
 
 
 @proxy.tool(name="search_insurance_conditions")
@@ -100,88 +106,62 @@ async def search_insurance_conditions(
     return await _route("conditions", "search_conditions", arguments, "search_insurance_conditions")
 
 
-@proxy.tool(name="thelion_get_quote")
-async def lion_get_quote(
-    client_age: int,
-    coverage_type: CoverageType,
-    asset_value: float,
-    session_id: str,
-) -> dict:
-    """Get a Lion quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thelion", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
+def _register_company_tools(company_id: str) -> None:
+    """Register one schema-stable set of proxy tools for a company."""
+    company_name = COMPANY_NAMES[company_id]
+
+    async def get_quote(
+        client_age: int,
+        coverage_type: CoverageType,
+        asset_value: float,
+        session_id: str,
+    ) -> dict:
+        arguments = {
+            "client_age": client_age,
+            "coverage_type": coverage_type,
+            "asset_value": asset_value,
+            "session_id": session_id,
+        }
+        return await _route(company_id, "get_quote", arguments)
+
+    async def check_coverage(coverage_type: CoverageType) -> dict:
+        return await _route(company_id, "check_coverage", {"coverage_type": coverage_type})
+
+    async def purchase_policy(
+        annual_premium: float,
+        session_id: str,
+        quote_id: str | None = None,
+    ) -> dict:
+        arguments = {"annual_premium": annual_premium, "session_id": session_id}
+        if quote_id:
+            arguments["quote_id"] = quote_id
+        return await _route(company_id, "purchase_policy", arguments)
+
+    proxy.tool(
+        name=f"{company_id}_get_quote",
+        description=(
+            f"Get a {company_name} quote. coverage_type must be auto, home, or life; "
+            "car coverages use auto."
+        ),
+    )(get_quote)
+    proxy.tool(
+        name=f"{company_id}_check_coverage",
+        description=(
+            f"Check {company_name} coverage. Use auto for any car guarantee such as "
+            "collision or theft."
+        ),
+    )(check_coverage)
+    proxy.tool(
+        name=f"{company_id}_purchase_policy",
+        description=(
+            f"Purchase a previously issued {company_name} quote. Pass quote_id when "
+            "available."
+        ),
+    )(purchase_policy)
 
 
-@proxy.tool(name="thebluecompany_get_quote")
-async def blue_get_quote(
-    client_age: int,
-    coverage_type: CoverageType,
-    asset_value: float,
-    session_id: str,
-) -> dict:
-    """Get a Blue quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thebluecompany", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
-
-
-@proxy.tool(name="thethreelines_get_quote")
-async def three_lines_get_quote(
-    client_age: int,
-    coverage_type: CoverageType,
-    asset_value: float,
-    session_id: str,
-) -> dict:
-    """Get a Three Lines quote. coverage_type must be auto, home, or life; car coverages use auto."""
-    return await _route("thethreelines", "get_quote", {"client_age": client_age, "coverage_type": coverage_type, "asset_value": asset_value, "session_id": session_id})
-
-
-@proxy.tool(name="thelion_check_coverage")
-async def lion_check_coverage(coverage_type: CoverageType) -> dict:
-    """Check Lion coverage. Use auto for any car guarantee such as collision or theft."""
-    return await _route("thelion", "check_coverage", {"coverage_type": coverage_type})
-
-
-@proxy.tool(name="thebluecompany_check_coverage")
-async def blue_check_coverage(coverage_type: CoverageType) -> dict:
-    """Check Blue coverage. Use auto for any car guarantee such as collision or theft."""
-    return await _route("thebluecompany", "check_coverage", {"coverage_type": coverage_type})
-
-
-@proxy.tool(name="thethreelines_check_coverage")
-async def three_lines_check_coverage(coverage_type: CoverageType) -> dict:
-    """Check Three Lines coverage. Use auto for any car guarantee such as collision or theft."""
-    return await _route("thethreelines", "check_coverage", {"coverage_type": coverage_type})
-
-
-@proxy.tool(name="thelion_purchase_policy")
-async def lion_purchase_policy(
-    annual_premium: float,
-    session_id: str,
-    quote_id: str | None = None,
-) -> dict:
-    """Purchase a previously issued Lion quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
-    return await _route("thelion", "purchase_policy", arguments)
-
-
-@proxy.tool(name="thebluecompany_purchase_policy")
-async def blue_purchase_policy(
-    annual_premium: float,
-    session_id: str,
-    quote_id: str | None = None,
-) -> dict:
-    """Purchase a previously issued Blue quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
-    return await _route("thebluecompany", "purchase_policy", arguments)
-
-
-@proxy.tool(name="thethreelines_purchase_policy")
-async def three_lines_purchase_policy(
-    annual_premium: float,
-    session_id: str,
-    quote_id: str | None = None,
-) -> dict:
-    """Purchase a previously issued Three Lines quote. Pass quote_id when available."""
-    arguments = {"annual_premium": annual_premium, "session_id": session_id, **({"quote_id": quote_id} if quote_id else {})}
-    return await _route("thethreelines", "purchase_policy", arguments)
+for _company_id in COMPANY_IDS:
+    _register_company_tools(_company_id)
 
 
 if __name__ == "__main__":
