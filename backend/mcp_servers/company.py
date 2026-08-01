@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
 import logging
 import time
-from typing import Literal
 import uuid
+from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from backend.config import get_settings
 from backend.domain import MongoQuoteLedger
 from backend.mcp_audit import audit, get_audit_logger
+from backend.mcp_protocol import MCP_SERVER_VERSION
+
 from .coverage import PolicyCoverage
 
 CoverageType = Literal["auto", "home", "life"]
@@ -95,8 +97,12 @@ def purchase_for(spec: CompanySpec, annual_premium: float) -> dict:
     }
 
 
-def create_company_server(spec: CompanySpec) -> FastMCP:
-    server = FastMCP(spec.company_name, instructions=f"Insurance tools for {spec.company_name}.", host="127.0.0.1", port=spec.port, stateless_http=True, json_response=True)
+def create_company_server(spec: CompanySpec) -> MCPServer:
+    server = MCPServer(
+        spec.company_name,
+        instructions=f"Insurance tools for {spec.company_name}.",
+        version=MCP_SERVER_VERSION,
+    )
     logger = get_audit_logger(spec.company_id)
     quote_ledger = MongoQuoteLedger(spec.company_id, get_settings())
 

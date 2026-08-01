@@ -1,4 +1,4 @@
-# Insurance Office — Haystack + MCP
+# Insurance Office — MCP Proxy + Haystack
 
 Insurance Office is a conversational insurance demo built with Python, Haystack, FastAPI, and the Model Context Protocol (MCP). It compares illustrative auto, home, and life policies from three independent insurance providers while preserving the original React frontend.
 
@@ -61,15 +61,29 @@ The proxy exposes nine provider tools plus one RAG tool, for example:
 - `thethreelines_purchase_policy`
 - `search_insurance_conditions`
 
+It also exposes `list_company_tools` for discovery and diagnostics, for eleven proxy tools in total.
+
 The RAG tool searches derived PDF chunks through a custom Haystack retriever. It accepts `auto`, `home`, or `life`, maps that type to one shared policy for all three companies, and returns page-aware sources that the assistant can cite.
+
+### MCP protocol version
+
+The backend targets MCP specification `2026-07-28` through the official Python SDK `2.0.0`.
+
+- Every MCP HTTP process is stateless and sessionless; no `Mcp-Session-Id` transport state is used.
+- Clients use `server/discover` and reject an internal service that negotiates an older protocol revision.
+- Tool calls carry the `2026-07-28` per-request metadata envelope.
+- Proxy-to-provider calls are pinned to `2026-07-28` after discovery.
+- Business conversation IDs remain explicit tool arguments. They identify quote ownership and are separate from removed MCP transport sessions.
+
+The current `mcp-haystack` package requires `mcp<2`, so this repository contains a small native adapter in `backend/agent/mcp_toolset.py`. It discovers schemas with the official MCP v2 client, creates ordinary Haystack `Tool` objects, injects server-controlled conversation state, and invokes the proxy over Streamable HTTP.
 
 ## Technology
 
 - Python 3.10+
 - Haystack 2.31
 - FastAPI
-- MCP Python SDK
-- Haystack MCP integration
+- MCP Python SDK 2.0
+- Native MCP v2-to-Haystack tool bridge
 - MongoDB Atlas or Community, and PyMongo
 - OpenAI chat models
 - React 19, TypeScript, and Vite
@@ -78,9 +92,10 @@ The RAG tool searches derived PDF chunks through a custom Haystack retriever. It
 ## Repository structure
 
 ```text
-insurance-office-haystack/
+insurance-office-mcp-proxy-haystack/
 ├── backend/
 │   ├── agent/
+│   │   ├── mcp_toolset.py       # Native MCP v2-to-Haystack adapter
 │   │   ├── model_factory.py     # OpenAI generator and Windows TLS setup
 │   │   ├── prompt.py            # Conversation and tool-use policy
 │   │   └── service.py           # Haystack agent and message history
@@ -111,7 +126,8 @@ insurance-office-haystack/
 │   │   └── server.py            # Conditions MCP process on port 5084
 │   ├── tests/                   # Unit, HTTP integration, and smoke tests
 │   ├── config.py                # Centralized environment configuration
-│   └── mcp_audit.py             # Correlated rotating JSON logs
+│   ├── mcp_audit.py             # Correlated rotating JSON logs
+│   └── mcp_protocol.py          # Protocol revision and stateless HTTP options
 ├── InsuranceOfficeUI/           # Original React frontend
 ├── pyproject.toml                # Test and lint configuration
 └── run_services.py               # Starts all six backend processes
@@ -131,7 +147,7 @@ Install:
 Run the following commands from the repository root:
 
 ```powershell
-cd C:\Users\giuli\Desktop\Portfolio\insurance-office-haystack
+cd C:\Users\giuli\Desktop\Portfolio\insurance-office-mcp-proxy-haystack
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -180,7 +196,7 @@ Keep the terminal open. Press `Ctrl+C` to stop all six backend processes.
 Open a second terminal:
 
 ```powershell
-cd C:\Users\giuli\Desktop\Portfolio\insurance-office-haystack\InsuranceOfficeUI
+cd C:\Users\giuli\Desktop\Portfolio\insurance-office-mcp-proxy-haystack\InsuranceOfficeUI
 npm install
 npm run dev
 ```
@@ -480,16 +496,18 @@ The suite covers:
 - Quote restart recovery and cross-session isolation.
 - Model compatibility settings.
 - API request contracts.
+- MCP `2026-07-28` negotiation and native Haystack bridge behavior.
 - MCP audit formatting.
 - MongoDB condition ingestion, text/hybrid retrieval, fallback behavior, and grounded evaluation metrics.
 
 With the backend services running, execute the live smoke test:
 
 ```powershell
+.\.venv\Scripts\python.exe -m backend.tests.smoke_mcp_protocol
 .\.venv\Scripts\python.exe -m backend.tests.smoke_mcp
 ```
 
-This verifies MCP discovery, proxy routing, quote issuance, verified purchase, and a live conversational API response.
+The first command is non-mutating and verifies `2026-07-28` discovery, proxy routing, and the Haystack bridge. The second additionally verifies quote issuance, a demo purchase, RAG retrieval, and a live conversational API response.
 
 ## Troubleshooting
 

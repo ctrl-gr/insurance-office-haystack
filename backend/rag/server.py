@@ -3,10 +3,13 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from mcp.server.fastmcp import FastMCP
+
+from mcp.server import MCPServer
 
 from backend.config import get_settings
 from backend.mcp_audit import audit, get_audit_logger
+from backend.mcp_protocol import MCP_SERVER_VERSION, streamable_http_options
+
 from .coverage_mapping import CoverageType, category_for_coverage
 from .service import InsuranceConditionsRag
 
@@ -15,13 +18,10 @@ settings = get_settings()
 rag = InsuranceConditionsRag(settings)
 logger = get_audit_logger("conditions")
 
-mcp = FastMCP(
+mcp = MCPServer(
     "Insurance Conditions RAG",
     instructions="Retrieve shared grounded policy conditions from the policy_conditions database by coverage type.",
-    host="127.0.0.1",
-    port=5084,
-    stateless_http=True,
-    json_response=True,
+    version=MCP_SERVER_VERSION,
 )
 
 
@@ -80,4 +80,4 @@ def search_conditions(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(**streamable_http_options(5084))

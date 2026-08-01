@@ -6,9 +6,10 @@ from typing import Any
 
 from haystack.components.agents import Agent
 from haystack.dataclasses import ChatMessage
-from haystack_integrations.tools.mcp import MCPToolset, StreamableHttpServerInfo
+from haystack.tools import Toolset
 
 from backend.config import get_settings
+from .mcp_toolset import build_mcp_toolset
 from .model_factory import create_chat_generator
 from .prompt import SYSTEM_PROMPT
 
@@ -26,7 +27,7 @@ SESSION_SCOPED_TOOLS = {
 }
 
 
-def hide_session_state_from_model(toolset: MCPToolset) -> None:
+def hide_session_state_from_model(toolset: Toolset) -> None:
     """Keep session_id server-controlled instead of allowing an LLM argument to override state."""
     for tool in toolset:
         if tool.name not in SESSION_SCOPED_TOOLS:
@@ -42,14 +43,13 @@ def hide_session_state_from_model(toolset: MCPToolset) -> None:
 @lru_cache(maxsize=1)
 def get_agent() -> Agent:
     settings = get_settings()
-    toolset = MCPToolset(
-        server_info=StreamableHttpServerInfo(url=settings.mcp_proxy_url),
+    toolset = build_mcp_toolset(
+        url=settings.mcp_proxy_url,
         tool_names=PROXY_TOOL_NAMES,
         connection_timeout=10,
         invocation_timeout=30,
         inputs_from_state=SESSION_SCOPED_TOOLS,
     )
-    toolset.warm_up()
     hide_session_state_from_model(toolset)
     agent = Agent(
         chat_generator=create_chat_generator(settings),

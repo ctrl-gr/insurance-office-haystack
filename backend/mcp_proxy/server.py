@@ -4,10 +4,11 @@ import logging
 import time
 import uuid
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from backend.config import get_settings
 from backend.mcp_audit import audit, get_audit_logger
+from backend.mcp_protocol import MCP_SERVER_VERSION, streamable_http_options
 from backend.mcp_servers.company import CoverageType
 from .client import call_mcp_tool
 
@@ -16,13 +17,10 @@ PROVIDER_URLS = get_settings().company_urls
 SERVICE_URLS = get_settings().mcp_service_urls
 AUDIT_LOGGER = get_audit_logger("proxy")
 
-proxy = FastMCP(
+proxy = MCPServer(
     "Insurance MCP Proxy",
     instructions="Gateway for three insurance company MCP servers and the insurance conditions RAG service.",
-    host="127.0.0.1",
-    port=5275,
-    stateless_http=True,
-    json_response=True,
+    version=MCP_SERVER_VERSION,
 )
 
 
@@ -187,4 +185,4 @@ async def three_lines_purchase_policy(
 
 
 if __name__ == "__main__":
-    proxy.run(transport="streamable-http")
+    proxy.run(**streamable_http_options(5275))
